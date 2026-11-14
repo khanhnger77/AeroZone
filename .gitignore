@@ -1,0 +1,14 @@
+# large NASA rasters & derived grids (re-create with `make data`)
+data/raw/hirise_dtm/*.tif
+data/raw/**/*.part
+data/processed/
+data/analysis/
+# keep small provenance + rover JSON tracked
+!data/metadata/
+
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.venv/
+.env
