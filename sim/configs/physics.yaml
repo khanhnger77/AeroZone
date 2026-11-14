@@ -1,0 +1,30 @@
+engine: pybullet            # pybullet (authoritative rigid-body) - falls back to kinematic if unavailable
+model: wheeled              # wheeled (6-wheel PyBullet multibody) | kinematic (terrain-following integrator)
+timestep_s: 0.005
+max_substeps: 8
+max_substeps_cap: 400
+loop_hz: 50
+warps: [1, 2, 5]
+gravity_m_s2: 3.711
+atmosphere:
+  air_density_kg_m3: 0.020
+  surface_pressure_pa: 610
+  drag_coefficient: 1.05
+collision:
+  restitution: 0.05
+  lateral_friction: 0.80
+  rolling_friction: 0.002
+  spinning_friction: 0.002
+  solver_iterations: 50
+terrain:
+  source: data/processed/elevation_5m.tif
+  corridor_margin_m: 250
+  max_grid_points: 2200
+  context_res_m: 10
+textures:
+  provider: https://trek.nasa.gov/tiles/Mars/EQ
+  context_layer: { product: JEZ_ctx_B_soc_008_orthoMosaic_6m_Eqc_latTs0_lon0, ext: png, max_zoom: 13 }
+  corridor_layer: { product: JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first_dd, ext: png, max_zoom: 17 }
+  max_texture_px: 4096
+backend:
+  planner_url: http://127.0.0.1:8000
