@@ -16,6 +16,9 @@ from .tools import (
     LANDMARKS_DB
 )
 
+# Model selection: default to gemini-3.5-flash-lite (fast, lightweight, active tier)
+DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
 router = APIRouter(tags=["copilot"])
 copilot_router = router
 
@@ -298,7 +301,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=DEFAULT_GEMINI_MODEL,
             contents=contents,
             config=config
         )
@@ -354,12 +357,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
         pass2_contents = [
             *contents,
             response.candidates[0].content,
-            types.Content(role="tool", parts=[func_resp_part])
+            types.Content(role="user", parts=[func_resp_part])
         ]
 
         try:
             final_res = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=DEFAULT_GEMINI_MODEL,
                 contents=pass2_contents,
                 config=config
             )
