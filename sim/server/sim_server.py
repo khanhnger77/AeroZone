@@ -316,10 +316,14 @@ class SimServer:
             "start": req["start"], "end": req["end"],
             "terrain": {k: g.describe() for k, g in self.grids.items()},
             "obstacles": obstacles,
+            "physics": self.router.describe(),     # active model, collider self-test, degradation
         }
-        log.info("mission %s: route %s %.0f m, corridor %dx%d, obstacles %s",
+        col = self.router.collider
+        log.info("mission %s: route %s %.0f m, corridor %dx%d, obstacles %s, model %s%s",
                  self.mission["id"], route["id"], length, corridor.nx, corridor.ny,
-                 obstacles["enabled"])
+                 obstacles["enabled"], self.router.active.name,
+                 f", collider {col.tiles} tiles x {col.tile_posts} posts "
+                 f"{'verified' if col.ok else 'FAILED'} ({col.probes} probes)" if col else "")
         self._spawn_background(self._warm_textures(self.mission["id"]))
         self._spawn_background(self.broadcast({"type": "mission_loaded",
                                                "mission": self.mission["id"]}, "events"))
@@ -473,6 +477,8 @@ class SimServer:
         nav.observe(pose)
         router.set_inputs(*avoid.command(nav.command(), pose, nav))
         router.update(min(elapsed, 0.25), self.warp)
+        for ev in router.pop_events():             # collider self-test failure, fall-through recovery
+            outbox.append((False, ev, "events"))
         if avoid.enabled and self._subscribers("lidar") and avoid.stream_due():
             outbox.append((True, avoid.encode_frame(pose, nav), "lidar"))
 
@@ -723,6 +729,21 @@ def make_app(sim: SimServer | None = None) -> web.Application:
     return app
 
 
+def _log_environment() -> None:
+    """Log the physics binary and whether the environment is exactly pixi.lock (never fatal)."""
+    try:
+        from sim.tools.check_env import check
+
+        rep = check()
+        pyb = rep.version_of("pybullet") or "not installed"
+        if rep.ok:
+            log.info("environment matches pixi.lock (%d packages); pybullet %s", len(rep.installed), pyb)
+        else:
+            log.warning("pybullet %s; %s", pyb, rep.summary().replace("\n", " | "))
+    except Exception as exc:  # diagnostics only
+        log.warning("could not check the environment against pixi.lock: %s", exc)
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="MARS ODYSSEY 3D sim server (module M4)")
     ap.add_argument("--host", default="127.0.0.1")
@@ -731,6 +752,7 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     logging.basicConfig(level=args.log_level.upper(),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _log_environment()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     if hasattr(signal, "SIGBREAK"):

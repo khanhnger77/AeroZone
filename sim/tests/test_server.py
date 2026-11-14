@@ -206,6 +206,28 @@ def test_tick_does_not_interleave_with_mission_install(terrain_tif, tmp_path):
     run(body, sim)
 
 
+def test_physics_events_are_broadcast_and_collider_reported(terrain_tif, tmp_path):
+    sim = make_sim(terrain_tif, tmp_path)
+
+    async def body(c):
+        m = await (await c.post("/sim/api/mission", json={"route": ROUTE})).json()
+        assert m["physics"]["model"] == sim.router.active.name
+        if sim.router.world is not None:           # PyBullet present: collider was self-tested
+            assert m["physics"]["collider"]["verified"] is True
+            assert m["physics"]["collider"]["probes"] > 0 and m["physics"]["degraded"] is None
+        sent = []
+
+        async def broadcast(msg, topic):
+            sent.append((topic, msg))
+
+        sim.broadcast = broadcast
+        sim.router._event("fell_through", "simulated")
+        await sim.tick(0.02)
+        assert ("events", {"type": "physics_event", "event": "fell_through", "detail": "simulated"}) in sent
+        assert [t for t, _ in sent].index("events") < [t for t, _ in sent].index("telemetry")
+    run(body, sim)
+
+
 def test_static_files_revalidate(terrain_tif, tmp_path):
     async def body(c):
         resp = await c.get("/sim/js/main.js")

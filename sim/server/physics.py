@@ -5,6 +5,12 @@ Why this module exists: the server is the single authority on vehicle state (pri
 height grid the browser renders (principle 5). A terrain-following kinematic integrator is kept as a
 cheap, deterministic fallback for machines without PyBullet and for very high warps.
 
+Robust on any platform/PyBullet build: the collider is never trusted blindly. Each terrain build is
+tiled and self-tested by dropping probes through the real contact pipeline (smaller tiles are tried
+if a probe falls through), and a runtime watchdog catches a wheeled rover that ends up below the
+rendered surface. Either failure switches the mission to the kinematic model and queues a
+`physics_event` for the page, so the rover can never visibly fall out of the world.
+
 Time is advanced by a fixed-step accumulator (principle 3): real elapsed time x warp is consumed in
 `timestep_s` slices, at most `cap` per call; when the cap is hit the backlog is dropped rather than
 carried, so a stalled event loop never makes the simulation spiral.
@@ -29,7 +35,15 @@ except ImportError:  # pragma: no cover - depends on the environment
 
 log = logging.getLogger(__name__)
 
-HEIGHTFIELD_TILE_POSTS = 512   # PyBullet heightfields above 512 x 512 posts stop colliding
+HEIGHTFIELD_TILE_POSTS = 512   # PyBullet heightfields above 512 x 512 posts stop colliding on some builds
+# Collider self-test: tile sizes tried in order until dropped probes rest on the surface everywhere.
+HEIGHTFIELD_TILE_FALLBACKS = (512, 256, 128)
+PROBE_RADIUS_M = 0.25
+PROBE_DROP_M = 0.5            # released this far above the surface
+PROBE_SETTLE_S = 0.8          # > free-fall time from PROBE_DROP_M at Mars gravity (0.52 s)
+PROBE_SINK_TOL_M = 0.5        # a probe this far below the rendered surface fell through
+PROBE_RANDOM = 24
+FALL_THROUGH_M = 1.0          # wheeled rover this far below the rendered surface: it fell through
 SPAWN_DROP_M = 0.3      # spawn height above the ground, so the rover settles onto the terrain
 SWITCH_DROP_M = 0.05    # smaller drop when transferring the pose between models
 STEER_MAX_RATE_RAD_S = 1.0
@@ -39,6 +53,21 @@ KINEMATIC_LAG_S = 0.5
 
 
 # --------------------------------------------------------------------------------------------- maths
+@dataclass
+class ColliderCheck:
+    """Result of `PhysicsWorld.verify_terrain`: did dropped probes rest on the surface everywhere?"""
+
+    ok: bool
+    tile_posts: int
+    tiles: int
+    probes: int
+    failures: list[str]
+
+    def describe(self) -> dict:
+        return {"verified": self.ok, "tile_posts": self.tile_posts, "tiles": self.tiles,
+                "probes": self.probes, "failures": self.failures[:5]}
+
+
 @dataclass
 class Pose:
     """Vehicle pose in the local ENU frame. (x, y, z) is the ground reference point under the body."""
@@ -134,6 +163,7 @@ class PhysicsWorld:
         p.setPhysicsEngineParameter(numSolverIterations=int(col.get("solver_iterations", 50)),
                                     physicsClientId=self.client)
         self.terrain_bodies: list[int] = []
+        self.tile_posts = HEIGHTFIELD_TILE_POSTS
         self.grid = None
         self._z_range = (0.0, 0.0)
 
@@ -146,26 +176,102 @@ class PhysicsWorld:
             "spinningFriction": float(col.get("spinning_friction", 0.002)),
         }
 
-    def set_terrain(self, grid) -> list[int]:
+    def set_terrain(self, grid, tile_posts: int = HEIGHTFIELD_TILE_POSTS) -> list[int]:
         """Build the heightfield collider from exactly the grid the browser renders.
 
-        A single PyBullet heightfield silently stops colliding above 512 x 512 posts, and a drive
-        corridor can be up to 2200 posts per side, so the grid is split into tiles of at most
-        `HEIGHTFIELD_TILE_POSTS` per side. Neighbouring tiles share their edge posts, so the surface
-        has no seams and every post keeps its exact height.
+        On some PyBullet builds (seen on macOS) a single heightfield silently stops colliding above
+        512 x 512 posts, and a drive corridor can be up to 2200 posts per side, so the grid is split
+        into tiles of at most `tile_posts` per side. Neighbouring tiles share their edge posts, so
+        the surface has no seams and every post keeps its exact height. Use `build_verified_terrain`
+        to also prove the result collides on this machine.
         """
+        tile_posts = max(2, int(tile_posts))
         for body in self.terrain_bodies:
             p.removeBody(body, physicsClientId=self.client)
         self.terrain_bodies = []
         ny, nx = grid.h.shape
-        step = HEIGHTFIELD_TILE_POSTS - 1
+        step = tile_posts - 1
         for j0 in range(0, max(ny - 1, 1), step):
             for i0 in range(0, max(nx - 1, 1), step):
                 self.terrain_bodies.append(self._add_tile(
-                    grid, j0, i0, grid.h[j0:j0 + HEIGHTFIELD_TILE_POSTS, i0:i0 + HEIGHTFIELD_TILE_POSTS]))
+                    grid, j0, i0, grid.h[j0:j0 + tile_posts, i0:i0 + tile_posts]))
         self.grid = grid
+        self.tile_posts = tile_posts
         self._z_range = (float(grid.h.min()), float(grid.h.max()))
         return self.terrain_bodies
+
+    # -- collider self-test
+    def _probe_points(self, grid, tile_posts: int, n_random: int, seed: int) -> list[tuple[float, float]]:
+        """Random points plus points on every tile seam and at every tile corner (the risky spots)."""
+        rng = np.random.default_rng(seed)
+        ny, nx = grid.h.shape
+        inset_x, inset_y = 2.0 * grid.dx, 2.0 * grid.dy
+        x_lo, x_hi = grid.x0 + inset_x, grid.x0 + (nx - 1) * grid.dx - inset_x
+        y_lo, y_hi = grid.y0 + inset_y, grid.y0 + (ny - 1) * grid.dy - inset_y
+        if x_hi <= x_lo or y_hi <= y_lo:
+            return [(grid.x0 + 0.5 * (nx - 1) * grid.dx, grid.y0 + 0.5 * (ny - 1) * grid.dy)]
+        pts = list(zip(rng.uniform(x_lo, x_hi, n_random), rng.uniform(y_lo, y_hi, n_random)))
+        pts += [(x_lo, y_lo), (x_hi, y_lo), (x_lo, y_hi), (x_hi, y_hi)]
+        step = tile_posts - 1
+        seams_x = [grid.x0 + k * step * grid.dx for k in range(1, (nx - 1) // step + 1) if k * step < nx - 1]
+        seams_y = [grid.y0 + k * step * grid.dy for k in range(1, (ny - 1) // step + 1) if k * step < ny - 1]
+        for sx in seams_x:
+            pts += [(sx, y) for y in rng.uniform(y_lo, y_hi, 3)]
+        for sy in seams_y:
+            pts += [(x, sy) for x in rng.uniform(x_lo, x_hi, 3)]
+        off = 0.3 * min(grid.dx, grid.dy)
+        for sx in seams_x:
+            for sy in seams_y:
+                pts += [(sx, sy), (sx + off, sy + off), (sx - off, sy - off)]
+        return pts
+
+    def verify_terrain(self, n_random: int = PROBE_RANDOM, seed: int = 0) -> "ColliderCheck":
+        """Drop probe spheres through the real pipeline (broadphase + contacts) and check they rest.
+
+        A ray test alone is not enough: the failure seen on macOS let rays hit the heightfield while
+        contacts silently missed it. Probes only have to not end up *below* the rendered surface; one
+        resting on an obstacle above it is fine. Steps the world, so call it before spawning.
+        """
+        grid = self.grid
+        if grid is None or not self.terrain_bodies:
+            return ColliderCheck(False, self.tile_posts, len(self.terrain_bodies), 0, ["no terrain"])
+        pts = self._probe_points(grid, self.tile_posts, n_random, seed)
+        cid = self.client
+        sphere = p.createCollisionShape(p.GEOM_SPHERE, radius=PROBE_RADIUS_M, physicsClientId=cid)
+        probes, failures = [], []
+        for x, y in pts:
+            ground = float(grid.height_at(x, y))
+            ray = self.ground_height_at(x, y)
+            if ray is None or abs(ray - ground) > 0.15:
+                failures.append(f"ray at ({x:.1f}, {y:.1f}): {ray} vs grid {ground:.2f}")
+            body = p.createMultiBody(1.0, sphere, -1, [x, y, ground + PROBE_RADIUS_M + PROBE_DROP_M],
+                                     physicsClientId=cid)
+            probes.append((body, x, y, ground))
+        try:
+            for _ in range(int(math.ceil(PROBE_SETTLE_S / self.timestep_s))):
+                p.stepSimulation(physicsClientId=cid)
+            for body, x, y, ground in probes:
+                z = p.getBasePositionAndOrientation(body, physicsClientId=cid)[0][2] - PROBE_RADIUS_M
+                if not math.isfinite(z) or z < ground - PROBE_SINK_TOL_M:
+                    failures.append(f"probe at ({x:.1f}, {y:.1f}) fell to {z - ground:+.2f} m")
+        finally:
+            for body, *_ in probes:
+                p.removeBody(body, physicsClientId=cid)
+        return ColliderCheck(not failures, self.tile_posts, len(self.terrain_bodies), len(probes), failures)
+
+    def build_verified_terrain(self, grid, sizes=HEIGHTFIELD_TILE_FALLBACKS) -> "ColliderCheck":
+        """Build tiles, self-test, and retry with smaller tiles until the collider holds everywhere."""
+        check = None
+        for size in sizes:
+            self.set_terrain(grid, size)
+            check = self.verify_terrain()
+            if check.ok:
+                if size != sizes[0]:
+                    log.warning("terrain collider holds only with %d-post tiles on this PyBullet build", size)
+                return check
+            log.warning("terrain collider with %d-post tiles failed its self-test: %s",
+                        size, "; ".join(check.failures[:3]))
+        return check
 
     def _add_tile(self, grid, j0: int, i0: int, h: np.ndarray) -> int:
         tny, tnx = h.shape
@@ -186,14 +292,21 @@ class PhysicsWorld:
         return body
 
     def ground_height_at(self, x: float, y: float) -> float | None:
-        """Height of the collider under (x, y) by ray cast, or None outside it."""
+        """Height of the collider under (x, y) by ray cast, or None outside it.
+
+        A vertical ray exactly on the shared edge of two tiles can slip through the zero-width
+        crack between their heightfields (depends on floating-point rounding of the seam position).
+        Bodies of finite size cannot, so on a miss the ray is re-cast 1 cm to each side.
+        """
         if not self.terrain_bodies:
             return None
         lo, hi = self._z_range
-        hit = p.rayTest([x, y, hi + 50.0], [x, y, lo - 50.0], physicsClientId=self.client)[0]
-        if hit[0] not in self.terrain_bodies:
-            return None
-        return float(hit[3][2])
+        for dx, dy in ((0.0, 0.0), (0.01, 0.0), (-0.01, 0.0), (0.0, 0.01), (0.0, -0.01)):
+            hit = p.rayTest([x + dx, y + dy, hi + 50.0], [x + dx, y + dy, lo - 50.0],
+                            physicsClientId=self.client)[0]
+            if hit[0] in self.terrain_bodies:
+                return float(hit[3][2])
+        return None
 
     def step(self) -> None:
         p.stepSimulation(physicsClientId=self.client)
@@ -462,9 +575,14 @@ class RoverModelRouter:
         self.available: list[str] = (["wheeled"] if self.wheeled else []) + ["kinematic"]
         wanted = physics_cfg.get("model", "wheeled")
         self.active = self._model(wanted) if wanted in self.available else self.kinematic
+        self._preferred = self.active.name     # what the config / user asked for
 
         self.sim_time = 0.0
         self.grid = None
+        self.collider: ColliderCheck | None = None
+        self.degraded: str | None = None       # why the wheeled model is off for this mission
+        self._events: list[dict] = []          # physics_event messages for the server to broadcast
+        self._last_good: tuple[float, float, float] | None = None   # (x, y, yaw) of the wheeled rover
         self._acc = 0.0
         self._v = 0.0
         self._w = 0.0
@@ -473,13 +591,38 @@ class RoverModelRouter:
     def _model(self, name: str):
         return self.wheeled if name == "wheeled" else self.kinematic
 
+    def _event(self, event: str, detail: str) -> None:
+        log.warning("physics event %s: %s", event, detail)
+        self._events.append({"type": "physics_event", "event": event, "detail": detail})
+
+    def pop_events(self) -> list[dict]:
+        """Physics events since the last call (collider self-test failure, fall-through recovery)."""
+        events, self._events = self._events, []
+        return events
+
     # -- setup
     def set_terrain(self, grid) -> None:
+        """Install a mission's terrain. With PyBullet, the collider is built and self-tested first;
+        if no tile size holds on this machine, the mission runs on the kinematic model instead."""
         self.grid = grid
-        if self.world is not None:
-            self.world.set_terrain(grid)
         self.kinematic.set_grid(grid)
         self._spawned = False
+        self._last_good = None
+        self.degraded = None
+        if self.world is None or self.wheeled is None:
+            return
+        self.wheeled.park()                    # out of the way while the probes are dropped
+        self.collider = self.world.build_verified_terrain(grid)
+        if self.collider.ok:
+            self.available = ["wheeled", "kinematic"]
+            self.active = self._model(self._preferred)
+            return
+        self.available = ["kinematic"]
+        self.active = self.kinematic
+        self.degraded = "terrain collider failed its self-test on this PyBullet build"
+        self._event("collider_unverified",
+                    f"{self.degraded} ({'; '.join(self.collider.failures[:2])}); "
+                    "driving with the kinematic model")
 
     def spawn(self, x: float, y: float, yaw: float) -> None:
         if self.wheeled is not None and self.active is not self.wheeled:
@@ -492,6 +635,7 @@ class RoverModelRouter:
     def set_model(self, name: str) -> bool:
         if name not in self.available:
             return False
+        self._preferred = name
         target = self._model(name)
         if target is self.active:
             return True
@@ -532,7 +676,32 @@ class RoverModelRouter:
         for _ in range(n):
             self.active.step(dt, self._v, self._w)
         self.sim_time += n * dt
+        if n and self.active is self.wheeled:
+            self._watch_fall_through()
         return n
+
+    def _watch_fall_through(self) -> None:
+        """A wheeled rover below the rendered surface fell through the collider: recover it.
+
+        Physically impossible otherwise (craters are carved into the grid itself), so this only
+        fires on a collider failure the self-test missed. The rover is put back at its last good
+        position on the kinematic model, which follows the rendered grid and cannot fall.
+        """
+        pose = self.wheeled.pose()
+        ground = float(self.grid.height_at(pose.x, pose.y))
+        if math.isfinite(pose.z) and pose.z >= ground - FALL_THROUGH_M:
+            self._last_good = (pose.x, pose.y, euler_from_quat(pose.q)[2])
+            return
+        x, y, yaw = self._last_good or (pose.x, pose.y, euler_from_quat(pose.q)[2])
+        self.kinematic.spawn(x, y, yaw)
+        self.wheeled.park()
+        self.active = self.kinematic
+        self._acc = 0.0
+        self.degraded = "wheeled rover fell through the terrain collider"
+        self._event("fell_through",
+                    f"wheeled rover was {ground - pose.z:.1f} m below the terrain at "
+                    f"({pose.x:.1f}, {pose.y:.1f}); recovered at its last good position on the "
+                    "kinematic model")
 
     # -- state
     def pose(self) -> Pose:
@@ -549,6 +718,8 @@ class RoverModelRouter:
             "max_substeps": self.max_substeps,
             "max_substeps_cap": self.max_substeps_cap,
             "gravity_m_s2": float(self.cfg["gravity_m_s2"]),
+            "collider": self.collider.describe() if self.collider else None,
+            "degraded": self.degraded,
         }
 
     def close(self) -> None:

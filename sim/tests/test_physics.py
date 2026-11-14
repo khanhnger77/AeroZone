@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 import yaml
 
-from sim.server.physics import (HAVE_PYBULLET, PhysicsWorld, RoverModelRouter, euler_from_quat,
-                                quat_from_euler, wheel_commands)
+from sim.server.physics import (HAVE_PYBULLET, ColliderCheck, PhysicsWorld, RoverModelRouter,
+                                euler_from_quat, quat_from_euler, wheel_commands)
 from sim.server.terrain import Grid
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
@@ -86,7 +86,7 @@ def test_collider_matches_render_grid(physics_cfg):
 
 
 def corridor_grid(nx: int = 1834, ny: int = 731, spacing: float = 5.0) -> Grid:
-    """Non-square grid the size of the real demo corridor (well above one 512 x 512 heightfield)."""
+    """Non-square grid the size of the real demo corridor (well above 512 x 512 posts)."""
     x0, y0 = -0.5 * (nx - 1) * spacing, -0.5 * (ny - 1) * spacing
     X, Y = np.meshgrid(x0 + spacing * np.arange(nx), y0 + spacing * np.arange(ny))
     h = (3.0 * np.sin(X / 60.0) * np.cos(Y / 45.0) + 0.002 * X).astype(np.float32)
@@ -95,17 +95,37 @@ def corridor_grid(nx: int = 1834, ny: int = 731, spacing: float = 5.0) -> Grid:
 
 
 @needs_pybullet
-def test_large_collider_matches_render_grid(physics_cfg):
+def test_corridor_sized_collider_matches_render_grid(physics_cfg):
+    """One heightfield for the whole demo-sized corridor must collide everywhere (no fall-through)."""
+    grid = corridor_grid()
+    world = PhysicsWorld(physics_cfg)
+    try:
+        world.set_terrain(grid)
+        rng = np.random.default_rng(1)
+        x_min, x_max, y_min, y_max = grid.extent()
+        errs = []
+        for x, y in zip(rng.uniform(x_min + 5, x_max - 5, 400), rng.uniform(y_min + 5, y_max - 5, 400)):
+            z_ray = world.ground_height_at(x, y)
+            assert z_ray is not None, (x, y)
+            errs.append(abs(z_ray - grid.height_at(x, y)))
+        assert max(errs) < 0.15, max(errs)
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_tiled_collider_matches_on_seams_and_corners(physics_cfg):
+    """Tiles share edge posts: the collider must match the grid exactly on seams and tile corners."""
     grid = corridor_grid()
     world = PhysicsWorld(physics_cfg)
     try:
         world.set_terrain(grid)
         assert len(world.terrain_bodies) > 1
-        rng = np.random.default_rng(1)
-        x_min, x_max, y_min, y_max = grid.extent()
-        seam_x = grid.x0 + 511 * grid.dx                        # shared edge of the first two tiles
-        pts = list(zip(rng.uniform(x_min + 5, x_max - 5, 300), rng.uniform(y_min + 5, y_max - 5, 300)))
-        pts += [(seam_x + dx, y) for dx in (-0.5, 0.0, 0.5) for y in np.linspace(y_min + 5, y_max - 5, 20)]
+        step = world.tile_posts - 1
+        _, _, y_min, y_max = grid.extent()
+        seam_x, seam_y = grid.x0 + step * grid.dx, grid.y0 + step * grid.dy
+        pts = [(seam_x + dx, y) for dx in (-0.5, 0.0, 0.5) for y in np.linspace(y_min + 5, y_max - 5, 20)]
+        pts += [(seam_x + d, seam_y + d) for d in (-0.5, 0.0, 0.5)]      # four tiles meet here
         errs = []
         for x, y in pts:
             z_ray = world.ground_height_at(x, y)
@@ -122,13 +142,199 @@ def test_wheeled_drives_across_tile_seam(physics_cfg, rover_cfg):
     router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
     try:
         router.set_terrain(grid)
-        seam_x = grid.x0 + 511 * grid.dx
+        seam_x = grid.x0 + (router.world.tile_posts - 1) * grid.dx
         router.spawn(seam_x - 10.0, 0.0, 0.0)
         simulate(router, 3.0)                      # settle
         router.set_inputs(1.0, 0.0)
         simulate(router, 20.0)                     # drive east over the seam
         b = router.pose()
+        assert router.active.name == "wheeled"
         assert b.x > seam_x + 5.0
+        assert b.z == pytest.approx(float(grid.height_at(b.x, b.y)), abs=0.2)
+    finally:
+        router.close()
+
+
+# ------------------------------------------------------------------ robustness on any PyBullet build
+def real_like_grid() -> Grid:
+    """Corridor-sized grid with the real demo corridor's non-round origin and spacing.
+
+    Round numbers hide the seam crack: with x0 = -4345.56 and dx = 4.7424 a vertical ray exactly on
+    a tile seam can slip between the two heightfields.
+    """
+    nx, ny, dx, dy = 1834, 727, 4.742418922493159, 5.0
+    x0, y0 = -4345.5595274148, -1815.206341884099
+    X, Y = np.meshgrid(x0 + dx * np.arange(nx), y0 + dy * np.arange(ny))
+    h = (40.0 * np.sin(X / 300.0) * np.cos(Y / 220.0) + 0.01 * X).astype(np.float32)
+    return Grid(h=h, x0=x0, y0=y0, dx=dx, dy=dy, lon_w=0, lon_e=0, lat_s=0, lat_n=0,
+                res_src_m=5.0, meta={"label": "real-like corridor"})
+
+
+@needs_pybullet
+def test_rays_exactly_on_tile_seams_find_the_ground(physics_cfg):
+    grid = real_like_grid()
+    world = PhysicsWorld(physics_cfg)
+    try:
+        world.set_terrain(grid)
+        step = world.tile_posts - 1
+        _, _, y_min, y_max = grid.extent()
+        seams = [grid.x0 + k * step * grid.dx for k in range(1, (grid.nx - 1) // step + 1)]
+        misses = []
+        for sx in seams:
+            for y in np.linspace(y_min + 5, y_max - 5, 60):
+                z = world.ground_height_at(sx, y)
+                if z is None or abs(z - grid.height_at(sx, y)) > 0.15:
+                    misses.append((sx, y, z))
+        assert not misses, misses[:3]
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_collider_self_test_passes_on_a_real_like_corridor(physics_cfg):
+    world = PhysicsWorld(physics_cfg)
+    try:
+        check = world.build_verified_terrain(real_like_grid())
+        assert check.ok, check.failures
+        assert check.tile_posts == 512                 # no needless fallback to smaller tiles
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_collider_self_test_passes_and_covers_seams(physics_cfg):
+    grid = corridor_grid()
+    world = PhysicsWorld(physics_cfg)
+    try:
+        check = world.build_verified_terrain(grid)
+        assert check.ok, check.failures
+        assert check.tile_posts == 512 and check.tiles == len(world.terrain_bodies) > 1
+        assert check.probes > 24                   # random probes plus seams and tile corners
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_collider_self_test_detects_a_non_colliding_terrain(physics_cfg):
+    """The macOS failure mode: a heightfield that exists but does not collide. Must be caught."""
+    import pybullet as p
+
+    grid = corridor_grid()
+    world = PhysicsWorld(physics_cfg)
+    try:
+        world.set_terrain(grid)
+        for body in world.terrain_bodies:          # keep the bodies, switch their contacts off
+            p.setCollisionFilterGroupMask(body, -1, 0, 0, physicsClientId=world.client)
+        check = world.verify_terrain()
+        assert not check.ok
+        assert any("fell" in f for f in check.failures)
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_self_test_retries_with_smaller_tiles(physics_cfg, monkeypatch):
+    grid = corridor_grid()
+    world = PhysicsWorld(physics_cfg)
+    real_verify = PhysicsWorld.verify_terrain
+
+    def verify(self, *a, **k):                     # pretend this build only copes with <= 256 posts
+        check = real_verify(self, *a, **k)
+        if self.tile_posts > 256:
+            check.ok, check.failures = False, ["simulated: probe fell"]
+        return check
+
+    monkeypatch.setattr(PhysicsWorld, "verify_terrain", verify)
+    try:
+        check = world.build_verified_terrain(grid)
+        assert check.ok and check.tile_posts == 256 and world.tile_posts == 256
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_failed_self_test_switches_mission_to_kinematic(physics_cfg, rover_cfg, monkeypatch):
+    def broken(self, *a, **k):
+        return ColliderCheck(False, self.tile_posts, len(self.terrain_bodies), 10, ["simulated: probe fell"])
+
+    monkeypatch.setattr(PhysicsWorld, "verify_terrain", broken)
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    try:
+        router.set_terrain(flat_grid())
+        assert router.active.name == "kinematic" and router.available == ["kinematic"]
+        assert router.degraded and router.describe()["collider"]["verified"] is False
+        assert router.set_model("wheeled") is False
+        events = router.pop_events()
+        assert [e["event"] for e in events] == ["collider_unverified"]
+        assert events[0]["type"] == "physics_event" and router.pop_events() == []
+        router.spawn(0.0, 0.0, 0.0)                # still drives, on the grid
+        router.set_inputs(1.0, 0.0)
+        simulate(router, 5.0)
+        assert router.pose().x > 3.0
+    finally:
+        router.close()
+
+
+@needs_pybullet
+def test_good_terrain_restores_the_preferred_wheeled_model(physics_cfg, rover_cfg, monkeypatch):
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    try:
+        with monkeypatch.context() as m:
+            m.setattr(PhysicsWorld, "verify_terrain",
+                      lambda self, *a, **k: ColliderCheck(False, self.tile_posts, 1, 1, ["simulated"]))
+            router.set_terrain(flat_grid())
+        assert router.active.name == "kinematic"
+        router.set_terrain(flat_grid())            # next mission, collider fine again
+        assert router.active.name == "wheeled" and "wheeled" in router.available
+        assert router.degraded is None
+    finally:
+        router.close()
+
+
+@needs_pybullet
+def test_watchdog_recovers_a_rover_that_falls_through(physics_cfg, rover_cfg):
+    import pybullet as p
+
+    grid = flat_grid()
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    try:
+        router.set_terrain(grid)
+        router.spawn(0.0, 0.0, 0.3)
+        simulate(router, 2.0)
+        good = router.pose()
+        assert router.pop_events() == []
+        body = router.wheeled.body                 # simulate a collider miss: rover 5 m underground
+        pos, orn = p.getBasePositionAndOrientation(body, physicsClientId=router.world.client)
+        p.resetBasePositionAndOrientation(body, [pos[0], pos[1], pos[2] - 5.0], orn,
+                                          physicsClientId=router.world.client)
+        router.update(0.02)
+        events = router.pop_events()
+        assert [e["event"] for e in events] == ["fell_through"]
+        assert router.active.name == "kinematic" and router.degraded
+        now = router.pose()
+        assert math.hypot(now.x - good.x, now.y - good.y) < 0.5      # last good position
+        assert now.z == pytest.approx(float(grid.height_at(now.x, now.y)), abs=0.05)
+        assert euler_from_quat(now.q)[2] == pytest.approx(0.3, abs=0.05)
+    finally:
+        router.close()
+
+
+@needs_pybullet
+def test_wheeled_holds_and_drives_on_corridor_sized_grid(physics_cfg, rover_cfg):
+    """Settle and drive 20 m far from the grid centre: the rover must neither sink nor stall."""
+    grid = corridor_grid()
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    try:
+        router.set_terrain(grid)
+        x_start = grid.x0 + 2500.0                     # well off-centre in a 9 km wide grid
+        router.spawn(x_start, 400.0, 0.0)
+        simulate(router, 3.0)
+        a = router.pose()
+        assert a.z == pytest.approx(float(grid.height_at(a.x, a.y)), abs=0.2)
+        router.set_inputs(1.0, 0.0)
+        simulate(router, 20.0)
+        b = router.pose()
+        assert b.x - a.x > 15.0                        # drove, did not stall
         assert b.z == pytest.approx(float(grid.height_at(b.x, b.y)), abs=0.2)
     finally:
         router.close()
