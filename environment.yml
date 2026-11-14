@@ -1,0 +1,20 @@
+name: mars
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - gdal
+  - rasterio
+  - numpy
+  - scipy
+  - scikit-image
+  - geopandas
+  - shapely
+  - pyproj
+  - pillow
+  - requests
+  - fastapi
+  - uvicorn
+  - httpx
+  - pytest
+  - nodejs=20

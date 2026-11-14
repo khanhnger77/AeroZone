@@ -1,0 +1,31 @@
+1
+00:00:00,150 --> 00:00:07,970
+Nếu một ngày con người đi bộ trên Sao Hỏa, họ nên đi đường nào cho an toàn? Mars Odyssey giúp trả lời câu hỏi đó.
+
+2
+00:00:08,171 --> 00:00:16,351
+Chúng tôi tập trung vào miệng hố Jezero, nơi xe tự hành Perseverance của NASA đang khám phá, với ảnh vệ tinh sắc nét đến hai mươi lăm xen ti mét.
+
+3
+00:00:16,540 --> 00:00:26,240
+Từ mô hình địa hình một mét, hệ thống tính độ dốc và độ gồ ghề, rồi tổng hợp thành bản đồ nguy hiểm. Màu xanh là dễ đi, màu đỏ là vách dốc cần tránh.
+
+4
+00:00:26,354 --> 00:00:32,424
+Mọi giả định đều được công khai. Đây là mô hình thử nghiệm, không phải chứng nhận an toàn.
+
+5
+00:00:32,712 --> 00:00:38,542
+Hai mươi lăm điểm lấy mẫu thật của Perseverance hiện ngay trên bản đồ, kèm ảnh chụp từ chính xe tự hành.
+
+6
+00:00:38,841 --> 00:00:47,221
+Chọn điểm xuất phát và điểm đến, hệ thống đề xuất ba tuyến đường, so sánh quãng đường, độ dốc và mức nguy hiểm, rồi giải thích vì sao chọn tuyến tốt nhất.
+
+7
+00:00:47,398 --> 00:00:51,168
+Biểu đồ mặt cắt cho thấy rõ từng đoạn lên dốc dọc hành trình.
+
+8
+00:00:53,841 --> 00:00:59,121
+Mars Odyssey. Khám phá thông minh hơn, di chuyển an toàn hơn.

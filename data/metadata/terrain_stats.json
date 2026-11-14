@@ -1,0 +1,48 @@
+{
+  "grid": {
+    "res_m": 5.0,
+    "shape": [
+      1007,
+      2133
+    ],
+    "crs_wkt": "PROJCS[\"Equirectangular Mars 2000 Sphere IAU\",GEOGCS[\"D_Mars_2000_Sphere\",DATUM[\"Mars_2000_(Sphere)\",SPHEROID[\"Mars_2000_Sphere_IAU\",3396190,0],AUTHORITY[\"ESRI\",\"106971\"]],PRIMEM[\"Reference_Meridian\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]]],PROJECTION[\"Equirectangular\"],PARAMETER[\"standard_parallel_1\",0],PARAMETER[\"central_meridian\",0],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+    "transform": [
+      5.0,
+      0.0,
+      4581341.0,
+      0.0,
+      -5.0,
+      1096879.0
+    ]
+  },
+  "elevation_m": {
+    "min": -2611.661865234375,
+    "p05": -2572.6103515625,
+    "median": -2458.394287109375,
+    "mean": -2429.183349609375,
+    "p95": -2080.0390625,
+    "max": -1912.08251953125
+  },
+  "slope_deg": {
+    "min": 0.002949764390982111,
+    "p05": 0.730785553989816,
+    "median": 4.527714688901044,
+    "mean": 6.31462646153027,
+    "p95": 18.062211811425506,
+    "max": 63.03975434103517
+  },
+  "roughness_m": {
+    "min": 0.0005437270156107843,
+    "p05": 0.016775356605648994,
+    "median": 0.05616955831646919,
+    "mean": 0.07742969691753387,
+    "p95": 0.2044520378112793,
+    "max": 2.919724225997925
+  },
+  "slope_fraction": {
+    "lt_5": 0.5372356002124835,
+    "5_15": 0.37342121325126365,
+    "15_25": 0.08045044277493085,
+    "ge_25": 0.008892743761321941
+  }
+}

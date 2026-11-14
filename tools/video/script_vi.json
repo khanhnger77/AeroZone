@@ -1,0 +1,18 @@
+[
+  {"id": "intro",   "caption": "Nếu con người đi bộ trên Sao Hỏa, đi đường nào thì an toàn?",
+   "voice": "Nếu một ngày con người đi bộ trên Sao Hỏa, họ nên đi đường nào cho an toàn? Mars Odyssey giúp trả lời câu hỏi đó."},
+  {"id": "explore", "caption": "Miệng hố Jezero · ảnh vệ tinh HiRISE 25 cm/điểm ảnh",
+   "voice": "Chúng tôi tập trung vào miệng hố Jezero, nơi xe tự hành Perseverance của NASA đang khám phá, với ảnh vệ tinh sắc nét đến hai mươi lăm xen ti mét."},
+  {"id": "layers",  "caption": "Độ dốc + độ gồ ghề → bản đồ nguy hiểm: xanh dễ đi, đỏ cần tránh",
+   "voice": "Từ mô hình địa hình một mét, hệ thống tính độ dốc và độ gồ ghề, rồi tổng hợp thành bản đồ nguy hiểm. Màu xanh là dễ đi, màu đỏ là vách dốc cần tránh."},
+  {"id": "safety",  "caption": "Mọi giả định đều công khai · mô hình thử nghiệm, chưa phải chứng nhận an toàn",
+   "voice": "Mọi giả định đều được công khai. Đây là mô hình thử nghiệm, không phải chứng nhận an toàn."},
+  {"id": "science", "caption": "25 điểm lấy mẫu thật của Perseverance + ảnh chụp từ xe tự hành",
+   "voice": "Hai mươi lăm điểm lấy mẫu thật của Perseverance hiện ngay trên bản đồ, kèm ảnh chụp từ chính xe tự hành."},
+  {"id": "mission", "caption": "Chọn điểm đi và điểm đến → 3 tuyến đường được so sánh và giải thích",
+   "voice": "Chọn điểm xuất phát và điểm đến, hệ thống đề xuất ba tuyến đường, so sánh quãng đường, độ dốc và mức nguy hiểm, rồi giải thích vì sao chọn tuyến tốt nhất."},
+  {"id": "profile", "caption": "Mặt cắt độ cao: thấy rõ từng đoạn lên dốc",
+   "voice": "Biểu đồ mặt cắt cho thấy rõ từng đoạn lên dốc dọc hành trình."},
+  {"id": "outro",   "caption": "Mars Odyssey · Khám phá thông minh hơn, di chuyển an toàn hơn",
+   "voice": "Mars Odyssey. Khám phá thông minh hơn, di chuyển an toàn hơn."}
+]
