@@ -1,0 +1,32 @@
+[workspace]
+authors = ["TuniTrinh <tuan.trinh.m@ctuav.global>"]
+channels = ['conda-forge']
+name = "mars"
+platforms = ['osx-arm64']
+version = "0.1.0"
+
+[tasks]
+data = "python scripts/download_data.py && python scripts/validate_data.py && python scripts/process_terrain.py && python scripts/generate_hazard.py && python scripts/render_layers.py && python scripts/build_science_targets.py"
+backend = "uvicorn backend.main:app --port 8000 --reload --reload-dir backend"
+frontend = { cmd = "npm install && npx vite --port 5173", cwd = "frontend" }
+test-api = { cmd = "python -m pytest -q tests", env = { PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1" } }
+test-web = { cmd = "npx tsc -b && npm run lint && npm test && npm run build", cwd = "frontend" }
+test = { depends-on = ["test-api", "test-web"] }
+
+[dependencies]
+python = "3.11.*"
+gdal = "*"
+rasterio = "*"
+numpy = "*"
+scipy = "*"
+scikit-image = "*"
+geopandas = "*"
+shapely = "*"
+pyproj = "*"
+pillow = "*"
+requests = "*"
+fastapi = "*"
+uvicorn = "*"
+httpx = "*"
+pytest = "*"
+nodejs = "20.*"

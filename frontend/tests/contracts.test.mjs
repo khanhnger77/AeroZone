@@ -54,3 +54,16 @@ test('C5 reports unreachable sim, HTTP detail, and command rejection', async t =
   mock.mock.mockImplementation(async () => new Response('{"ok":false,"error":"Invalid speed"}'))
   await assert.rejects(sim.simCommand({ type: 'start' }), /Invalid speed/)
 })
+test('C4 planRoute posts start/end and surfaces the 422 detail string', async t => {
+  const api = await source('../src/services/api.ts')
+  let sent
+  const mock = t.mock.method(globalThis, 'fetch', async (url, init) => {
+    sent = { url, body: JSON.parse(init.body) }
+    return new Response('{"detail":"start is outside the terrain grid"}', { status: 422 })
+  })
+  await assert.rejects(api.planRoute({ lon: 10, lat: 10 }, { lon: 77.3, lat: 18.5 }), /start is outside the terrain grid/)
+  assert.equal(sent.url, '/api/route')
+  assert.deepEqual(sent.body, { start: { lon: 10, lat: 10 }, end: { lon: 77.3, lat: 18.5 } })
+  mock.mock.mockImplementation(async () => new Response('not json', { status: 500, statusText: 'Server Error' }))
+  await assert.rejects(api.getPoint({ lon: 77.4, lat: 18.4 }), /500 Server Error/)
+})
