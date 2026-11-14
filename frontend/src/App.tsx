@@ -237,6 +237,9 @@ export default function App() {
       if (payload.lon != null && payload.lat != null) {
         fly(Number(payload.lon), Number(payload.lat), 15)
       }
+    } else if (action_type === 'SHOW_WEATHER' || action_type === 'SHOW_SPACE_WEATHER') {
+      setTab('safety')
+      setPanelOpen(true)
     }
   }, [cursor, fly, plan, setLayers, start])
 
