@@ -1,0 +1,26 @@
+{
+  "dtm_crs_ok": true,
+  "dtm_res_m": 1.0,
+  "dtm_bounds_deg": [
+    77.222933,
+    18.306799,
+    77.583964,
+    18.669315
+  ],
+  "aoi_inside_dtm": true,
+  "aoi_nodata_fraction": 0.0,
+  "aoi_elevation_range_m": [
+    -2611.72,
+    -1911.39
+  ],
+  "waypoints_total": 708,
+  "waypoints_inside_dtm": 664,
+  "waypoints_inside_aoi": 505,
+  "elev_check_n": 612,
+  "elev_diff_dtm_minus_rover_m": {
+    "mean": 0.575,
+    "median": 0.005,
+    "std": 1.412,
+    "abs_p95": 4.11
+  }
+}

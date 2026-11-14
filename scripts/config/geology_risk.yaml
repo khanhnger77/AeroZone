@@ -1,0 +1,79 @@
+# [v1.1] Geology -> obstacle proxy. Unit names are the literal values of the Stack et al. 2020
+# shapefile attribute table (read from M2020_JEZ_geology_edited_equi0_allquads_v6_archive.dbf,
+# Nov 2026), not guessed. Each polygon carries a surface unit (SurfUName) and the bedrock unit
+# beneath it (BedrkUName). The surface unit is what the wheels meet, so it decides the group,
+# except where it is listed in `defer_to_bedrock` (thin cover: the bedrock is effectively exposed).
+
+surface_field: SurfUName
+bedrock_field: BedrkUName
+defer_to_bedrock: ["Minor Cover Us"]
+
+groups:            # order = class-code order; risk_score 0-100 (null = unknown -> NaN)
+  bedrock_smooth:   {risk_score: 10, color: "#c9b79c"}
+  regolith_fines:   {risk_score: 20, color: "#e9d8a6"}
+  delta_layered:    {risk_score: 30, color: "#94d2bd"}
+  fractured_rough:  {risk_score: 55, color: "#ee9b00"}
+  aeolian_bedforms: {risk_score: 70, color: "#f4a261"}   # wheel sinkage in ripples / dunes
+  blocky_talus:     {risk_score: 90, color: "#9b2226"}
+  unknown:          {risk_score: null, color: "#6c757d"}
+
+unit_groups:
+  # surface units
+  "Undifferentiated smooth": bedrock_smooth
+  "Moderate Cover Us": regolith_fines
+  "Aeolian bedforms, small": aeolian_bedforms
+  "Aeolian bedforms, large": aeolian_bedforms
+  "Talus": blocky_talus
+  "Minor Cover Us": regolith_fines   # only used when the bedrock attribute is empty
+  # bedrock units (used under `defer_to_bedrock` cover)
+  "Crater floor fractured 1": fractured_rough
+  "Crater floor fractured 2": fractured_rough
+  "Crater floor fractured rough": fractured_rough
+  "Margin fractured": fractured_rough
+  "Nili Planum fractured": fractured_rough
+  "Crater rim rough": fractured_rough
+  "Delta thinly layered": delta_layered
+  "Delta thickly layered": delta_layered
+  "Delta truncated curvilinear layered": delta_layered
+  "Delta layered rough": delta_layered
+  "Crater rim layered": delta_layered
+  "Neretva Vallis layered": delta_layered
+  "Delta blocky": blocky_talus
+  "Crater rim blocky": blocky_talus
+  "Crater rim breccia": blocky_talus
+
+# Thermal inertia (tiu) -> obstacle prior (0-100), piecewise linear, clamped.
+ti_prior: [[150, 400, 800], [0, 20, 60]]
+
+# NOAH-H descriptive classes (Wright et al. 2022; scheme of Barrett et al. 2022). Codes, names and
+# colours are read from the dataset's DescriptiveClasses_rank_DC.lyrx / DescriptiveClasses.clr
+# (verified Nov 2026); risk scores are this project's heuristic (ripples = sinkage, boulders = obstacle).
+noah_raster: NOAH-H_terrain_classifications_of_Jezero_Crater_Mars/NOAH-H_mosaics/Descriptive_classes/Jezero_NOAHH_mosaic_DC.tif
+noah_source_res_m: 0.25
+terrain_classes:
+  1:  {name: "Non-bedrock: smooth, featureless", risk_score: 15, color: "#00ff00"}
+  2:  {name: "Bedrock: textured", risk_score: 25, color: "#ab0000"}
+  3:  {name: "Small ripples: non-continuous, bedrock substrate", risk_score: 40, color: "#5b0000"}
+  4:  {name: "Bedrock: smooth", risk_score: 10, color: "#fe0000"}
+  5:  {name: "Small ripples: non-continuous, non-bedrock substrate", risk_score: 45, color: "#007dff"}
+  6:  {name: "Small ripples: continuous", risk_score: 60, color: "#00fffe"}
+  7:  {name: "Non-bedrock: textured", risk_score: 25, color: "#005a00"}
+  8:  {name: "Non-bedrock: smooth, lineated", risk_score: 15, color: "#00aa00"}
+  9:  {name: "Large ripples: simple form, isolated", risk_score: 60, color: "#ff9600"}
+  10: {name: "Bedrock: rugged", risk_score: 60, color: "#ffff00"}
+  11: {name: "Boulder fields", risk_score: 90, color: "#000000"}
+  12: {name: "Large ripples: simple form, continuous", risk_score: 80, color: "#0000fd"}
+  13: {name: "Bedrock: fractured", risk_score: 45, color: "#870059"}
+  14: {name: "Large ripples: rectilinear form", risk_score: 80, color: "#ccccff"}
+
+# Rasterisation of the 1:5 000 map: at 1 m, then majority per 5 m cell.
+rasterise_res_m: 1.0
+
+# Crater factor from the 1 m DTM.
+crater:
+  min_depth_m: 0.5
+  min_diameter_m: 5.0
+  max_diameter_m: 400.0      # larger closed depressions are basins, not craters
+  min_circularity: 0.55      # 4*pi*A / P^2 of the depression region
+  tile_px: 2048              # DTM processed in overlapping tiles to bound memory
+  overlap_px: 256

@@ -1,0 +1,108 @@
+{
+  "category": "observation",
+  "source": "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910%2FDVN%2FF8R2JX",
+  "radius_km": 1500.0,
+  "years": [
+    24,
+    32
+  ],
+  "by_ls_bin": [
+    {
+      "ls_start_deg": 0.0,
+      "count": 3
+    },
+    {
+      "ls_start_deg": 30.0,
+      "count": 0
+    },
+    {
+      "ls_start_deg": 60.0,
+      "count": 3
+    },
+    {
+      "ls_start_deg": 90.0,
+      "count": 2
+    },
+    {
+      "ls_start_deg": 120.0,
+      "count": 13
+    },
+    {
+      "ls_start_deg": 150.0,
+      "count": 1
+    },
+    {
+      "ls_start_deg": 180.0,
+      "count": 41
+    },
+    {
+      "ls_start_deg": 210.0,
+      "count": 37
+    },
+    {
+      "ls_start_deg": 240.0,
+      "count": 2
+    },
+    {
+      "ls_start_deg": 270.0,
+      "count": 5
+    },
+    {
+      "ls_start_deg": 300.0,
+      "count": 33
+    },
+    {
+      "ls_start_deg": 330.0,
+      "count": 28
+    }
+  ],
+  "by_mars_year": [
+    {
+      "mars_year": 24,
+      "count": 30
+    },
+    {
+      "mars_year": 25,
+      "count": 19
+    },
+    {
+      "mars_year": 26,
+      "count": 29
+    },
+    {
+      "mars_year": 27,
+      "count": 24
+    },
+    {
+      "mars_year": 28,
+      "count": 17
+    },
+    {
+      "mars_year": 29,
+      "count": 22
+    },
+    {
+      "mars_year": 30,
+      "count": 15
+    },
+    {
+      "mars_year": 31,
+      "count": 9
+    },
+    {
+      "mars_year": 32,
+      "count": 3
+    }
+  ],
+  "global_frequency_png": "data/layers/dust_storm_frequency_global.png",
+  "global_bounds": [
+    [
+      -90,
+      -180
+    ],
+    [
+      90,
+      180
+    ]
+  ]
+}

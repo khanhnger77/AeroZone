@@ -1,0 +1,736 @@
+{
+  "aoi_bounds": [
+    [
+      18.42,
+      77.29
+    ],
+    [
+      18.505,
+      77.47
+    ]
+  ],
+  "raster_layers": [
+    {
+      "id": "elevation",
+      "name": "Elevation",
+      "url": "data/layers/elevation.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "terrain",
+      "category": "observation",
+      "units": "m above areoid",
+      "source": "USGS Astrogeology, HiRISE DTM mosaic of Jezero crater, 1 m (Mars 2020 TRN)",
+      "processing": "mean of 1 m posts per 5 m cell; colour p05-p95 stretch, hillshade-modulated (az 315, alt 35)",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#1d2b53",
+          "#2f6f8f",
+          "#7fb069",
+          "#e6c36a",
+          "#f3efe6"
+        ],
+        "min": -2572.6103515625,
+        "max": -2080.0390625,
+        "stops": [
+          [
+            -2572.6104,
+            "#1d2b53"
+          ],
+          [
+            -2449.4675,
+            "#2f6f8f"
+          ],
+          [
+            -2326.3247,
+            "#7fb069"
+          ],
+          [
+            -2203.1819,
+            "#e6c36a"
+          ],
+          [
+            -2080.0391,
+            "#f3efe6"
+          ]
+        ]
+      },
+      "stats": {
+        "min": -2611.66,
+        "p05": -2572.61,
+        "median": -2458.39,
+        "mean": -2429.18,
+        "p95": -2080.04,
+        "max": -1912.08
+      }
+    },
+    {
+      "id": "slope",
+      "name": "Slope",
+      "url": "data/layers/slope.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "terrain",
+      "category": "derived",
+      "units": "deg",
+      "source": "USGS Astrogeology, HiRISE DTM mosaic of Jezero crater, 1 m (Mars 2020 TRN)",
+      "processing": "central differences on the 5 m grid, cos(lat)-corrected east-west spacing",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#0d1b2a",
+          "#2a9d8f",
+          "#e9c46a",
+          "#e76f51",
+          "#9b2226"
+        ],
+        "min": 0.0,
+        "max": 35.0,
+        "stops": [
+          [
+            0.0,
+            "#0d1b2a"
+          ],
+          [
+            5.0,
+            "#2a9d8f"
+          ],
+          [
+            15.0,
+            "#e9c46a"
+          ],
+          [
+            25.0,
+            "#e76f51"
+          ],
+          [
+            35.0,
+            "#9b2226"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 0.0,
+        "p05": 0.73,
+        "median": 4.53,
+        "mean": 6.31,
+        "p95": 18.06,
+        "max": 63.04
+      }
+    },
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "url": "data/layers/roughness.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "terrain",
+      "category": "derived",
+      "units": "m",
+      "source": "USGS Astrogeology, HiRISE DTM mosaic of Jezero crater, 1 m (Mars 2020 TRN)",
+      "processing": "RMS of (1 m z - 9 x 9 m moving mean) per 5 m cell",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#0b132b",
+          "#3a506b",
+          "#5bc0be",
+          "#f4d35e",
+          "#ee6c4d"
+        ],
+        "min": 0.0,
+        "max": 0.6,
+        "stops": [
+          [
+            0.0,
+            "#0b132b"
+          ],
+          [
+            0.05,
+            "#3a506b"
+          ],
+          [
+            0.15,
+            "#5bc0be"
+          ],
+          [
+            0.3,
+            "#f4d35e"
+          ],
+          [
+            0.6,
+            "#ee6c4d"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 0.0005,
+        "p05": 0.0168,
+        "median": 0.0561,
+        "mean": 0.0774,
+        "p95": 0.2044,
+        "max": 2.9197
+      }
+    },
+    {
+      "id": "hazard",
+      "name": "Hazard (prototype)",
+      "url": "data/layers/hazard.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "hazard",
+      "category": "model",
+      "units": "0-100",
+      "source": "derived from the HiRISE DTM layers",
+      "processing": "Hazard = (0.4*SlopeRisk + 0.3*RoughnessRisk) / 0.7  [full model: 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*Obstacle + 0.1*Crater; renormalised over the available weight]",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#1a9850",
+          "#91cf60",
+          "#fee08b",
+          "#fc8d59",
+          "#d73027",
+          "#7b0041"
+        ],
+        "min": 0.0,
+        "max": 100.0,
+        "stops": [
+          [
+            0.0,
+            "#1a9850"
+          ],
+          [
+            20.0,
+            "#91cf60"
+          ],
+          [
+            40.0,
+            "#fee08b"
+          ],
+          [
+            60.0,
+            "#fc8d59"
+          ],
+          [
+            80.0,
+            "#d73027"
+          ],
+          [
+            100.0,
+            "#7b0041"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 0.24,
+        "p05": 3.52,
+        "median": 13.37,
+        "mean": 18.23,
+        "p95": 48.39,
+        "max": 100.0
+      },
+      "model": {
+        "formula": "Hazard = (0.4*SlopeRisk + 0.3*RoughnessRisk) / 0.7  [full model: 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*Obstacle + 0.1*Crater; renormalised over the available weight]",
+        "weights": {
+          "slope": 0.4,
+          "roughness": 0.3,
+          "obstacle": 0.2,
+          "crater": 0.1
+        },
+        "factor_available": {
+          "slope": true,
+          "roughness": true,
+          "obstacle": false,
+          "crater": false
+        },
+        "model_weight_coverage": 0.7,
+        "renormalised": true,
+        "slope_stops": [
+          [
+            0,
+            5,
+            15,
+            25,
+            30
+          ],
+          [
+            0,
+            10,
+            50,
+            90,
+            100
+          ]
+        ],
+        "roughness_stops": [
+          [
+            0,
+            0.1,
+            0.25,
+            0.5
+          ],
+          [
+            0,
+            25,
+            60,
+            100
+          ]
+        ],
+        "no_go_slope_deg": 30,
+        "classes": [
+          {
+            "min": 0,
+            "max": 20,
+            "label": "Low"
+          },
+          {
+            "min": 20,
+            "max": 40,
+            "label": "Moderate"
+          },
+          {
+            "min": 40,
+            "max": 60,
+            "label": "Elevated"
+          },
+          {
+            "min": 60,
+            "max": 80,
+            "label": "High"
+          },
+          {
+            "min": 80,
+            "max": 100,
+            "label": "Severe"
+          }
+        ],
+        "class_fraction": {
+          "Low": 0.659196,
+          "Moderate": 0.243129,
+          "Elevated": 0.08132,
+          "High": 0.014462,
+          "Severe": 0.001893
+        },
+        "no_go_fraction": 0.00236,
+        "disclaimer": "Prototype hazard index for route-planning demonstrations only. It is derived from orbital topography with heuristic weights and has not been validated against rover traversability data. It is not a mission-planning product.",
+        "factor_quality": {
+          "slope": "derived_dtm",
+          "roughness": "derived_dtm",
+          "obstacle": "unavailable",
+          "crater": "unavailable"
+        },
+        "factor_sources": {
+          "slope": "HiRISE DTM 1 m (USGS), slope on the 5 m mean surface",
+          "roughness": "HiRISE DTM 1 m (USGS), RMS residual about the 9 x 9 m moving mean"
+        },
+        "partial_factor_fraction": 0.0
+      }
+    }
+  ],
+  "overlay_layers": [
+    {
+      "id": "geologic_units",
+      "name": "Geologic units (Mars 2020 Science Team)",
+      "url": "data/layers/geologic_units.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "geology",
+      "category": "derived",
+      "units": "class",
+      "source": "Stack et al. 2020, ESM shapefile",
+      "processing": "rasterised, majority -> 5 m",
+      "legend": {
+        "type": "classes",
+        "classes": [
+          {
+            "label": "bedrock_smooth",
+            "min": 1,
+            "max": 1,
+            "color": "#c9b79c"
+          },
+          {
+            "label": "regolith_fines",
+            "min": 2,
+            "max": 2,
+            "color": "#e9d8a6"
+          },
+          {
+            "label": "delta_layered",
+            "min": 3,
+            "max": 7,
+            "color": "#94d2bd"
+          },
+          {
+            "label": "fractured_rough",
+            "min": 8,
+            "max": 12,
+            "color": "#ee9b00"
+          },
+          {
+            "label": "aeolian_bedforms",
+            "min": 13,
+            "max": 14,
+            "color": "#f4a261"
+          },
+          {
+            "label": "blocky_talus",
+            "min": 15,
+            "max": 17,
+            "color": "#9b2226"
+          }
+        ]
+      }
+    },
+    {
+      "id": "terrain_class",
+      "name": "Terrain class (NOAH-H, deep learning)",
+      "url": "data/layers/terrain_class.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "geology",
+      "category": "model",
+      "units": "class",
+      "source": "Wright et al. 2022",
+      "processing": "mode/nearest -> 5 m",
+      "legend": {
+        "type": "classes",
+        "classes": [
+          {
+            "label": "Non-bedrock: smooth, featureless",
+            "min": 1,
+            "max": 1,
+            "color": "#00ff00"
+          },
+          {
+            "label": "Bedrock: textured",
+            "min": 2,
+            "max": 2,
+            "color": "#ab0000"
+          },
+          {
+            "label": "Small ripples: non-continuous, bedrock substrate",
+            "min": 3,
+            "max": 3,
+            "color": "#5b0000"
+          },
+          {
+            "label": "Bedrock: smooth",
+            "min": 4,
+            "max": 4,
+            "color": "#fe0000"
+          },
+          {
+            "label": "Small ripples: non-continuous, non-bedrock substrate",
+            "min": 5,
+            "max": 5,
+            "color": "#007dff"
+          },
+          {
+            "label": "Small ripples: continuous",
+            "min": 6,
+            "max": 6,
+            "color": "#00fffe"
+          },
+          {
+            "label": "Non-bedrock: textured",
+            "min": 7,
+            "max": 7,
+            "color": "#005a00"
+          },
+          {
+            "label": "Non-bedrock: smooth, lineated",
+            "min": 8,
+            "max": 8,
+            "color": "#00aa00"
+          },
+          {
+            "label": "Large ripples: simple form, isolated",
+            "min": 9,
+            "max": 9,
+            "color": "#ff9600"
+          },
+          {
+            "label": "Bedrock: rugged",
+            "min": 10,
+            "max": 10,
+            "color": "#ffff00"
+          },
+          {
+            "label": "Boulder fields",
+            "min": 11,
+            "max": 11,
+            "color": "#000000"
+          },
+          {
+            "label": "Large ripples: simple form, continuous",
+            "min": 12,
+            "max": 12,
+            "color": "#0000fd"
+          },
+          {
+            "label": "Bedrock: fractured",
+            "min": 13,
+            "max": 13,
+            "color": "#870059"
+          },
+          {
+            "label": "Large ripples: rectilinear form",
+            "min": 14,
+            "max": 14,
+            "color": "#ccccff"
+          }
+        ]
+      }
+    },
+    {
+      "id": "thermal_inertia",
+      "name": "Thermal inertia (THEMIS)",
+      "url": "data/layers/thermal_inertia.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "geology",
+      "category": "observation",
+      "units": "J m⁻² K⁻¹ s⁻½",
+      "source": "USGS THEMIS TI quantitative mosaic, 100 m",
+      "processing": "reprojected, bilinear -> 5 m",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#2b1d0e",
+          "#7f5539",
+          "#b08968",
+          "#ddb892",
+          "#e6ccb2",
+          "#f8f4ef"
+        ],
+        "min": 100.0,
+        "max": 800.0,
+        "stops": [
+          [
+            100.0,
+            "#2b1d0e"
+          ],
+          [
+            240.0,
+            "#7f5539"
+          ],
+          [
+            380.0,
+            "#b08968"
+          ],
+          [
+            520.0,
+            "#ddb892"
+          ],
+          [
+            660.0,
+            "#e6ccb2"
+          ],
+          [
+            800.0,
+            "#f8f4ef"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 133.9,
+        "p05": 175.4,
+        "median": 295.7,
+        "mean": 289.2,
+        "p95": 376.1,
+        "max": 476.1,
+        "source_res_m": 100.0
+      }
+    },
+    {
+      "id": "obstacle_risk",
+      "name": "Obstacle factor (proxy)",
+      "url": "data/layers/obstacle_risk.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "hazard",
+      "category": "model",
+      "units": "0-100",
+      "source": "geologic_units x geology_risk.yaml (+ TI prior)",
+      "processing": "per-unit score, max with TI prior",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#1a9850",
+          "#91cf60",
+          "#fee08b",
+          "#fc8d59",
+          "#d73027",
+          "#7b0041"
+        ],
+        "min": 0.0,
+        "max": 100.0,
+        "stops": [
+          [
+            0.0,
+            "#1a9850"
+          ],
+          [
+            20.0,
+            "#91cf60"
+          ],
+          [
+            40.0,
+            "#fee08b"
+          ],
+          [
+            60.0,
+            "#fc8d59"
+          ],
+          [
+            80.0,
+            "#d73027"
+          ],
+          [
+            100.0,
+            "#7b0041"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 10.0,
+        "p05": 10.0,
+        "median": 55.0,
+        "mean": 53.41,
+        "p95": 90.0,
+        "max": 90.0
+      }
+    },
+    {
+      "id": "crater_risk",
+      "name": "Crater factor",
+      "url": "data/layers/crater_risk.png",
+      "bounds": [
+        [
+          18.42006869,
+          77.28999373
+        ],
+        [
+          18.50501219,
+          77.46991873
+        ]
+      ],
+      "group": "hazard",
+      "category": "derived",
+      "units": "0-100",
+      "source": "HiRISE DTM 1 m",
+      "processing": "depression detection (fill - DTM), max per 5 m cell",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#1a9850",
+          "#91cf60",
+          "#fee08b",
+          "#fc8d59",
+          "#d73027",
+          "#7b0041"
+        ],
+        "min": 0.0,
+        "max": 100.0,
+        "stops": [
+          [
+            0.0,
+            "#1a9850"
+          ],
+          [
+            20.0,
+            "#91cf60"
+          ],
+          [
+            40.0,
+            "#fee08b"
+          ],
+          [
+            60.0,
+            "#fc8d59"
+          ],
+          [
+            80.0,
+            "#d73027"
+          ],
+          [
+            100.0,
+            "#7b0041"
+          ]
+        ]
+      },
+      "stats": {
+        "min": 0.0,
+        "p05": 0.0,
+        "median": 0.0,
+        "mean": 3.22,
+        "p95": 5.51,
+        "max": 100.0
+      }
+    }
+  ]
+}

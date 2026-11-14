@@ -1,0 +1,39 @@
+# [v1.1] build_climate.py and the MEDA download.
+mcd:
+  local_time_h: 14
+  ls_deg: {start: 0, stop: 345, step: 15}
+  scenarios: [climatology, dust_storm]
+  version: "6.1"
+  disclaimer: "GCM cell >> AOI; climatological, not a forecast"
+  # Variable names searched in the export (first match wins).
+  variables:
+    tsurf_k: [tsurf, Tsurf, surface_temperature]
+    psurf_pa: [ps, psurf, surface_pressure]
+    wind_m_s: [wind, windspeed, wind_speed, u_v_wind]
+    dust_tau: [dod, dust_tau, tau, dust_column_optical_depth]
+
+meda:
+  base: https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/
+  # sols: "waypoints" = the sols present in waypoints.geojson, or an explicit list [13, 14, ...]
+  sols: waypoints
+  max_sols: 12               # evenly spaced subset; each sol is ~6 MB of CSV and the PDS server is slow
+  products:                  # file pattern within <level>/<range>/sol_NNNN/, columns, reducer
+  # valid_range drops PDS fill values (999999999) and non-physical samples
+    pressure:  {level: data_derived_env, prefix: DER_PS, columns: [PRESSURE], valid_range: [100, 1500]}
+    air_temp:  {level: data_calibrated_env, prefix: CAL_ATS, columns: [ATS_LOCAL_TEMP1, ATS_LOCAL_TEMP2, ATS_LOCAL_TEMP3, ATS_LOCAL_TEMP4, ATS_LOCAL_TEMP5], valid_range: [100, 350]}
+    humidity:  {level: data_derived_env, prefix: DER_RHS, columns: [LOCAL_RELATIVE_HUMIDITY], valid_range: [0, 100]}
+    wind:      {level: data_derived_env, prefix: DER_WS, columns: [HORIZONTAL_WIND_SPEED], valid_range: [0, 60]}
+
+mdad:
+  radius_km: 1500
+  ls_bin_deg: 30
+  columns:
+    mars_year: "Mars Year"
+    subphase: "Mission subphase"
+    sol: "Sol"
+    ls: "Ls"
+    lon: "Centroid longitude"
+    lat: "Centroid latitude"
+    area_km2: "Area (square km)"
+    member_id: "Member ID"
+    seq_id: "Sequence ID"

@@ -1,0 +1,249 @@
+{
+  "units": [
+    {
+      "code": 1,
+      "unit_id": "Undifferentiated smooth",
+      "name": "Undifferentiated smooth",
+      "group": "bedrock_smooth",
+      "risk_score": 10,
+      "color": "#c9b79c"
+    },
+    {
+      "code": 2,
+      "unit_id": "Moderate Cover Us",
+      "name": "Moderate Cover Us",
+      "group": "regolith_fines",
+      "risk_score": 20,
+      "color": "#e9d8a6"
+    },
+    {
+      "code": 3,
+      "unit_id": "Crater rim layered",
+      "name": "Crater rim layered",
+      "group": "delta_layered",
+      "risk_score": 30,
+      "color": "#94d2bd"
+    },
+    {
+      "code": 4,
+      "unit_id": "Delta thickly layered",
+      "name": "Delta thickly layered",
+      "group": "delta_layered",
+      "risk_score": 30,
+      "color": "#94d2bd"
+    },
+    {
+      "code": 5,
+      "unit_id": "Delta thinly layered",
+      "name": "Delta thinly layered",
+      "group": "delta_layered",
+      "risk_score": 30,
+      "color": "#94d2bd"
+    },
+    {
+      "code": 6,
+      "unit_id": "Delta truncated curvilinear layered",
+      "name": "Delta truncated curvilinear layered",
+      "group": "delta_layered",
+      "risk_score": 30,
+      "color": "#94d2bd"
+    },
+    {
+      "code": 7,
+      "unit_id": "Neretva Vallis layered",
+      "name": "Neretva Vallis layered",
+      "group": "delta_layered",
+      "risk_score": 30,
+      "color": "#94d2bd"
+    },
+    {
+      "code": 8,
+      "unit_id": "Crater floor fractured 1",
+      "name": "Crater floor fractured 1",
+      "group": "fractured_rough",
+      "risk_score": 55,
+      "color": "#ee9b00"
+    },
+    {
+      "code": 9,
+      "unit_id": "Crater floor fractured 2",
+      "name": "Crater floor fractured 2",
+      "group": "fractured_rough",
+      "risk_score": 55,
+      "color": "#ee9b00"
+    },
+    {
+      "code": 10,
+      "unit_id": "Crater floor fractured rough",
+      "name": "Crater floor fractured rough",
+      "group": "fractured_rough",
+      "risk_score": 55,
+      "color": "#ee9b00"
+    },
+    {
+      "code": 11,
+      "unit_id": "Margin fractured",
+      "name": "Margin fractured",
+      "group": "fractured_rough",
+      "risk_score": 55,
+      "color": "#ee9b00"
+    },
+    {
+      "code": 12,
+      "unit_id": "Nili Planum fractured",
+      "name": "Nili Planum fractured",
+      "group": "fractured_rough",
+      "risk_score": 55,
+      "color": "#ee9b00"
+    },
+    {
+      "code": 13,
+      "unit_id": "Aeolian bedforms, large",
+      "name": "Aeolian bedforms, large",
+      "group": "aeolian_bedforms",
+      "risk_score": 70,
+      "color": "#f4a261"
+    },
+    {
+      "code": 14,
+      "unit_id": "Aeolian bedforms, small",
+      "name": "Aeolian bedforms, small",
+      "group": "aeolian_bedforms",
+      "risk_score": 70,
+      "color": "#f4a261"
+    },
+    {
+      "code": 15,
+      "unit_id": "Crater rim blocky",
+      "name": "Crater rim blocky",
+      "group": "blocky_talus",
+      "risk_score": 90,
+      "color": "#9b2226"
+    },
+    {
+      "code": 16,
+      "unit_id": "Delta blocky",
+      "name": "Delta blocky",
+      "group": "blocky_talus",
+      "risk_score": 90,
+      "color": "#9b2226"
+    },
+    {
+      "code": 17,
+      "unit_id": "Talus",
+      "name": "Talus",
+      "group": "blocky_talus",
+      "risk_score": 90,
+      "color": "#9b2226"
+    }
+  ],
+  "terrain_classes": [
+    {
+      "code": 1,
+      "name": "Non-bedrock: smooth, featureless",
+      "risk_score": 15,
+      "color": "#00ff00"
+    },
+    {
+      "code": 2,
+      "name": "Bedrock: textured",
+      "risk_score": 25,
+      "color": "#ab0000"
+    },
+    {
+      "code": 3,
+      "name": "Small ripples: non-continuous, bedrock substrate",
+      "risk_score": 40,
+      "color": "#5b0000"
+    },
+    {
+      "code": 4,
+      "name": "Bedrock: smooth",
+      "risk_score": 10,
+      "color": "#fe0000"
+    },
+    {
+      "code": 5,
+      "name": "Small ripples: non-continuous, non-bedrock substrate",
+      "risk_score": 45,
+      "color": "#007dff"
+    },
+    {
+      "code": 6,
+      "name": "Small ripples: continuous",
+      "risk_score": 60,
+      "color": "#00fffe"
+    },
+    {
+      "code": 7,
+      "name": "Non-bedrock: textured",
+      "risk_score": 25,
+      "color": "#005a00"
+    },
+    {
+      "code": 8,
+      "name": "Non-bedrock: smooth, lineated",
+      "risk_score": 15,
+      "color": "#00aa00"
+    },
+    {
+      "code": 9,
+      "name": "Large ripples: simple form, isolated",
+      "risk_score": 60,
+      "color": "#ff9600"
+    },
+    {
+      "code": 10,
+      "name": "Bedrock: rugged",
+      "risk_score": 60,
+      "color": "#ffff00"
+    },
+    {
+      "code": 11,
+      "name": "Boulder fields",
+      "risk_score": 90,
+      "color": "#000000"
+    },
+    {
+      "code": 12,
+      "name": "Large ripples: simple form, continuous",
+      "risk_score": 80,
+      "color": "#0000fd"
+    },
+    {
+      "code": 13,
+      "name": "Bedrock: fractured",
+      "risk_score": 45,
+      "color": "#870059"
+    },
+    {
+      "code": 14,
+      "name": "Large ripples: rectilinear form",
+      "risk_score": 80,
+      "color": "#ccccff"
+    }
+  ],
+  "group_colors": {
+    "bedrock_smooth": "#c9b79c",
+    "regolith_fines": "#e9d8a6",
+    "delta_layered": "#94d2bd",
+    "fractured_rough": "#ee9b00",
+    "aeolian_bedforms": "#f4a261",
+    "blocky_talus": "#9b2226",
+    "unknown": "#6c757d"
+  },
+  "group_risk": {
+    "bedrock_smooth": 10,
+    "regolith_fines": 20,
+    "delta_layered": 30,
+    "fractured_rough": 55,
+    "aeolian_bedforms": 70,
+    "blocky_talus": 90,
+    "unknown": null
+  },
+  "source": {
+    "units": "Stack, K. M. et al. (2020) Photogeologic map of the Perseverance rover field site in Jezero crater constructed by the Mars 2020 Science Team. Space Sci. Rev. 216, 127. doi:10.1007/s11214-020-00739-x",
+    "terrain_classes": "Wright, J. et al. (2022) NOAH-H terrain classifications of Jezero crater, Mars. The Open University, dataset. doi:10.21954/ou.rd.17121482.v1"
+  },
+  "terrain_source_res_m": 0.25
+}
