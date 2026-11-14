@@ -261,7 +261,8 @@ def test_failed_self_test_switches_mission_to_kinematic(physics_cfg, rover_cfg, 
     router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
     try:
         router.set_terrain(flat_grid())
-        assert router.active.name == "kinematic" and router.available == ["kinematic"]
+        assert router.active.name == "kinematic" and "wheeled" not in router.available
+        assert "kinematic" in router.available
         assert router.degraded and router.describe()["collider"]["verified"] is False
         assert router.set_model("wheeled") is False
         events = router.pop_events()
@@ -271,6 +272,26 @@ def test_failed_self_test_switches_mission_to_kinematic(physics_cfg, rover_cfg, 
         router.set_inputs(1.0, 0.0)
         simulate(router, 5.0)
         assert router.pose().x > 3.0
+    finally:
+        router.close()
+
+
+@needs_pybullet
+def test_astronaut_survives_terrain_rebuild_and_collider_failure(physics_cfg, rover_cfg, monkeypatch):
+    """The on-foot model follows the rendered grid: a collider self-test never takes it away."""
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    if router.astronaut is None:
+        pytest.skip("astronaut model not configured")
+    try:
+        router.set_terrain(flat_grid())
+        assert router.available == ["wheeled", "kinematic", "astronaut"]
+        router.spawn(0.0, 0.0, 0.0)
+        assert router.set_model("astronaut") and router.active.name == "astronaut"
+        monkeypatch.setattr(PhysicsWorld, "verify_terrain",
+                            lambda self, *a, **k: ColliderCheck(False, self.tile_posts, 1, 1, ["simulated"]))
+        router.set_terrain(flat_grid())            # next mission on a "broken" PyBullet build
+        assert router.available == ["kinematic", "astronaut"]
+        assert router.active.name == "astronaut"   # still walking, not forced onto the rover
     finally:
         router.close()
 

@@ -624,12 +624,14 @@ class RoverModelRouter:
             return
         self.wheeled.park()                    # out of the way while the probes are dropped
         self.collider = self.world.build_verified_terrain(grid)
+        # Kinematic and astronaut follow the rendered grid, so they never depend on the collider.
+        grid_models = ["kinematic"] + (["astronaut"] if self.astronaut is not None else [])
         if self.collider.ok:
-            self.available = ["wheeled", "kinematic"]
+            self.available = ["wheeled"] + grid_models
             self.active = self._model(self._preferred)
             return
-        self.available = ["kinematic"]
-        self.active = self.kinematic
+        self.available = grid_models
+        self.active = self._model(self._preferred) if self._preferred in grid_models else self.kinematic
         self.degraded = "terrain collider failed its self-test on this PyBullet build"
         self._event("collider_unverified",
                     f"{self.degraded} ({'; '.join(self.collider.failures[:2])}); "
