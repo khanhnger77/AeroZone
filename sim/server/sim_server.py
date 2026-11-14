@@ -455,32 +455,44 @@ class SimServer:
         }
 
     async def tick(self, elapsed: float) -> None:
-        """One loop iteration in the C8 call order."""
+        """One loop iteration in the C8 call order.
+
+        All stepping happens before the first ``await``: an await yields to the event loop, where a
+        mission install may run, and the step must never mix the old mission's pose with the new
+        mission's path, terrain or obstacles. Messages are queued and sent at the end, in order.
+        """
         router, nav, avoid = self.router, self.nav, self.avoid
+        outbox: list[tuple[bool, object, str]] = []          # (binary, payload, topic)
         pose = router.pose()
         ev = avoid.tick(pose, nav, router.sim_time)
         if ev is not None:
             msg = dict(ev)
             msg.setdefault("type", "avoid_event")
-            await self.broadcast(msg, "events")
+            outbox.append((False, msg, "events"))
         nav.observe(pose)
         router.set_inputs(*avoid.command(nav.command(), pose, nav))
         router.update(min(elapsed, 0.25), self.warp)
         if avoid.enabled and self._subscribers("lidar") and avoid.stream_due():
-            await self.broadcast_bytes(avoid.encode_frame(pose, nav), "lidar")
+            outbox.append((True, avoid.encode_frame(pose, nav), "lidar"))
 
         pose = router.pose()
         t = self.telemetry(pose)
         t["avoid"] = avoid.status(nav)
-        await self.broadcast(t, "telemetry")
+        outbox.append((False, t, "telemetry"))
 
         max_tilt = float(self.rover_cfg["limits"]["max_tilt_deg"])
         now = time.monotonic()
         if t["tilt_deg"] > max_tilt and now - self._last_tilt_event >= TILT_EVENT_PERIOD_S:
             self._last_tilt_event = now
-            await self.broadcast({"type": "physics_event", "event": "tilt_limit",
-                                  "detail": f"tilt {t['tilt_deg']:.1f} deg exceeds {max_tilt:.0f} deg"},
-                                 "events")
+            outbox.append((False, {"type": "physics_event", "event": "tilt_limit",
+                                   "detail": f"tilt {t['tilt_deg']:.1f} deg exceeds {max_tilt:.0f} deg"},
+                           "events"))
+
+        for binary, payload, topic in outbox:
+            if binary:
+                await self.broadcast_bytes(payload, topic)
+            else:
+                await self.broadcast(payload, topic)
 
     async def run_loop(self) -> None:
         period = 1.0 / self.loop_hz
@@ -578,9 +590,26 @@ async def handle_command(request: web.Request) -> web.Response:
     return web.json_response(request.app[SIM_KEY].command(body), dumps=dumps)
 
 
+def _stale(request: web.Request, sim: "SimServer") -> web.Response | None:
+    """409 when the page asks (``?m=``) for a mission that is no longer loaded.
+
+    Without this, a mission installed between the page's ``GET api/mission`` and its terrain or
+    texture fetch would hand it another mission's data: a byte-count error ("world not loaded"),
+    or, for a same-size corridor, one mission's ground drawn under the other's rover.
+    """
+    wanted = request.query.get("m")
+    if wanted and wanted != sim.mission_id:
+        return web.json_response({"ok": False, "error": "stale mission", "requested": wanted,
+                                  "mission": sim.mission_id}, status=409)
+    return None
+
+
 async def handle_terrain(request: web.Request) -> web.Response:
     sim = request.app[SIM_KEY]
     level = request.match_info["level"]
+    stale = _stale(request, sim)
+    if stale is not None:
+        return stale
     data = sim.terrain_bytes.get(level)
     if data is None:
         return _error(404, f"no {level} terrain (load a mission first)")
@@ -591,6 +620,9 @@ async def handle_terrain(request: web.Request) -> web.Response:
 async def handle_texture(request: web.Request) -> web.StreamResponse:
     sim = request.app[SIM_KEY]
     level = request.match_info["level"]
+    stale = _stale(request, sim)
+    if stale is not None:
+        return stale
     if sim.mission is None or level not in sim.grids:
         return _error(404, f"no {level} texture (load a mission first)")
     loop = asyncio.get_running_loop()
@@ -614,7 +646,9 @@ def _static_handler(root: Path):
         if not path.is_file():
             raise web.HTTPNotFound()
         ctype = MIME.get(path.suffix.lower(), "application/octet-stream")
-        return web.FileResponse(path, headers={"Content-Type": ctype})
+        # Always revalidate (cheap 304 via ETag): without it browsers cache ES modules
+        # heuristically and keep running an old main.js against an updated server.
+        return web.FileResponse(path, headers={"Content-Type": ctype, "Cache-Control": "no-cache"})
     return handler
 
 
