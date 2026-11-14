@@ -1,0 +1,16 @@
+source: https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/PERSEVERANCE/meda.html
+base_url: https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/
+document: https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/document/meda_env_rdr_sis.pdf
+default_start_sol: 1186
+default_end_sol: 1215
+products:
+  temperature:
+    collection: data_calibrated_env
+    token: CAL_ATS
+    column: ATS_LOCAL_TEMP1
+    unit: kelvin
+  pressure:
+    collection: data_derived_env
+    token: DER_PS
+    column: PRESSURE
+    unit: pascal

@@ -76,3 +76,7 @@ sim = "python -m sim.server.sim_server"
 frontend = { cmd = "npm install && npx vite --port 5173", cwd = "frontend" }
 fetch-assets = "python -m sim.tools.fetch_assets"
 test = "python -m pytest -q sim/tests sim/obstacle_avoid/tests tests"
+# M3: web-only build/preview and the historical MEDA weather snapshot (Weather tab).
+build = { cmd = "npm run build", cwd = "frontend" }
+preview = { cmd = "npx vite preview --host 127.0.0.1 --port 4173 --strictPort", cwd = "frontend" }
+weather-data = { cmd = "python scripts/build_weather.py", description = "Download and summarize the MEDA historical weather snapshot" }

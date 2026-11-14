@@ -48,6 +48,7 @@ interface Props {
   onCursor: (p: LonLat | null, zoom: number) => void
   onMapClick: (p: LonLat) => void
   onSampleClick: (no: number) => void
+  onWaypointClick?: (sol: number) => void
 }
 
 /**
@@ -174,8 +175,9 @@ export default function MarsMap(p: Props) {
         )}
         {p.layers.waypoints && p.waypoints?.features.map((f, i) => (
           <CircleMarker key={i} center={[f.properties.lat, f.properties.lon]} radius={2}
-            pathOptions={{ color: '#cbd5e1', weight: 0, fillOpacity: 0.75 }}>
-            <Tooltip className="mo-tip">Sol {f.properties.sol}</Tooltip>
+            pathOptions={{ color: '#cbd5e1', weight: 0, fillOpacity: 0.75 }}
+            eventHandlers={{ click: e => { L.DomEvent.stopPropagation(e); p.onWaypointClick?.(f.properties.sol) } }}>
+            <Tooltip className="mo-tip">Sol {f.properties.sol} · click for recorded weather</Tooltip>
           </CircleMarker>
         ))}
 
