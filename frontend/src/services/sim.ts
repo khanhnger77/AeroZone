@@ -30,6 +30,7 @@ export type SimCommand = { type: 'start' | 'pause' | 'reset' }
   | { type: 'set_speed' | 'set_warp'; value: number }
   | { type: 'set_model'; value: 'wheeled' | 'kinematic' }
   | { type: 'end' }
+  | { type: 'set_energy'; agent: string; value: number }
   | { type: 'select'; agent: string; manual?: boolean }
   | { type: 'drive'; v: number; w: number }
   | { type: 'goto'; agent?: string; lon: number; lat: number; route?: string }

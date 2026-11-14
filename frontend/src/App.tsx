@@ -19,12 +19,12 @@ import LidarScreen from './components/LidarScreen'
 import { loadSimMission, loadSimWorld, simConfig, simCommand, type SimCommand, type SimControlsConfig, type SimMission, type SimTelemetry } from './services/sim'
 import LocationPanel from './components/LocationPanel'
 import TargetPicker from './components/TargetPicker'
-import { AgentPopup, Joystick, LocationPopup, MapLegend, NavigatePanel, ObjectSelector } from './components/SimOverlays'
+import { AgentPopup, Joystick, LocationPopup, MapLegend, NavigatePanel, ObjectSelector, OxygenAlerts } from './components/SimOverlays'
 import {
-  LOCATION_TYPES, MARKER_STYLE, OBJECT_KINDS, loadLocations, nextLocationName, saveLocations, useSimWorld,
+  LOCATION_TYPES, LOW_ENERGY_PCT, MARKER_STYLE, OBJECT_KINDS, RESOURCE, energyColor, loadLocations, nextLocationName, saveLocations, useSimWorld,
   type LocationType, type MapLocation, type MarkerType, type ObjectKind,
 } from './sim/world'
-import { Gamepad2, Navigation, Power } from 'lucide-react'
+import { BatteryMedium, Gamepad2, Navigation, Power, Wind } from 'lucide-react'
 import { useMedia } from './useMedia'
 import { useConnections } from './useConnections'
 import ConnectionStatus from './components/ConnectionStatus'
@@ -324,7 +324,7 @@ export default function App() {
     else if (!mobile) setPlace(p)
   }, [pickMode, end, demo, demoLoading, mobile, navPicking, placing, traverseFor, focus, goto])
 
-  const moveLocation = useCallback((id: string, pt: LonLat) => setLocations(list => list.map(l => (l.id === id ? { ...l, ...pt } : l))), [])
+  const moveLocation = useCallback((id: string, pt: Partial<Pick<MapLocation, 'lon' | 'lat' | 'description'>>) => setLocations(list => list.map(l => (l.id === id ? { ...l, ...pt } : l))), [])
   const focusLocation = useCallback((id: string) => {
     const loc = locations.find(l => l.id === id)
     if (!loc) return
@@ -344,6 +344,22 @@ export default function App() {
     if (id && id !== lastSelected.current && !demo) setFocus({ kind: 'agent', id })
     lastSelected.current = id
   }, [liveWorld?.selected, demo])
+  // Low-oxygen alerts: an astronaut under 30 % stays listed until a rover is sent to them; the
+  // record clears when their oxygen is back at 30 % or more (or the person leaves the simulation).
+  const [rescues, setRescues] = useState<Record<string, string>>({})   // astronaut id -> rover id sent
+  useEffect(() => {
+    setRescues(r => {
+      const keep = Object.fromEntries(Object.entries(r).filter(([id]) => (agents?.find(a => a.id === id)?.energy ?? 100) < LOW_ENERGY_PCT))
+      return Object.keys(keep).length === Object.keys(r).length ? r : keep
+    })
+  }, [agents])
+  const lowOxygen = agents?.filter(a => a.kind === 'astronaut' && (a.energy ?? 100) < LOW_ENERGY_PCT && !rescues[a.id]) ?? []
+  const sendRover = useCallback(async (roverId: string, personId: string) => {
+    const top = Math.max(...(controls?.speeds_m_s ?? [2]))
+    await command({ type: 'set_speed', value: top, agent: roverId })
+    await command({ type: 'intercept', agent: roverId, target: personId })
+    setRescues(r => ({ ...r, [personId]: roverId }))
+  }, [command, controls])
   const focusedAgent = focus?.kind === 'agent' ? agents?.find(a => a.id === focus.id) ?? null : null
   const focusedLocation = focus?.kind === 'location' ? locations.find(l => l.id === focus.id) ?? null : null
 
@@ -581,6 +597,19 @@ export default function App() {
           </select>
         </div>
       )}
+      {/* Chase / orbit: the ridden object's battery (vehicle) or suit oxygen (astronaut), top-right. */}
+      {simCamera !== 'overview' && selectedAgent?.energy != null && (() => {
+        const pct = selectedAgent.energy, c = energyColor(pct), Icon = selectedAgent.kind === 'rover' ? BatteryMedium : Wind
+        return <div className="glass absolute right-3 top-3 z-[1000] w-[200px] rounded-xl px-3 py-2" aria-label={`${RESOURCE[selectedAgent.kind].label} ${pct.toFixed(0)} percent`}>
+          <div className="flex items-center gap-2 text-[11px]">
+            <Icon size={16} style={{ color: c }} aria-hidden="true" />
+            <span className="text-muted">{RESOURCE[selectedAgent.kind].label}</span>
+            <span className="ml-auto font-mono text-sm font-semibold" style={{ color: c }}>{pct.toFixed(1)}%</span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: c }} /></div>
+          <div className="mt-1 truncate text-[10px] text-faint">{selectedAgent.name}</div>
+        </div>
+      })()}
       {simCamera !== 'overview' && selectedAgent && (
         <div className="absolute bottom-[60px] right-[220px] z-[1000] flex flex-col items-end gap-2">
           {navOpen && <NavigatePanel me={selectedAgent} agents={agents ?? []} locations={locations} picking={pickerOpen}
@@ -613,7 +642,8 @@ export default function App() {
 
   const objectPopup = !demo && !traverseFor && (focusedAgent && agents ? (
     <AgentPopup agent={focusedAgent} agents={agents} locations={locations} speeds={controls?.speeds_m_s ?? []}
-      onSpeed={v => command({ type: 'set_speed', value: v, agent: focusedAgent.id })} isSelected={focusedAgent.id === liveWorld?.selected} arming={traverseFor === focusedAgent.id}
+      onSpeed={v => command({ type: 'set_speed', value: v, agent: focusedAgent.id })}
+      onEnergy={v => command({ type: 'set_energy', agent: focusedAgent.id, value: v })} isSelected={focusedAgent.id === liveWorld?.selected} arming={traverseFor === focusedAgent.id}
       onSelect={() => selectAgent(focusedAgent.id)} onClose={() => { setFocus(null); setTraverseFor(null) }}
       onTraverse={() => setTraverseFor(traverseFor === focusedAgent.id ? null : focusedAgent.id)} />
   ) : focusedLocation ? (
@@ -698,6 +728,8 @@ export default function App() {
       {lidar}
       {demoOverlay}
       {objectPopup}
+      <OxygenAlerts people={lowOxygen} rovers={agents?.filter(a => a.kind === 'rover') ?? []} warp={warp}
+        maxSpeed={Math.max(...(controls?.speeds_m_s ?? [2]))} top={demo ? 'top-3' : 'top-[100px]'} onSend={sendRover} />
       {pointViewer}
 
       {/* ---- left: icon rail + panel ---- */}

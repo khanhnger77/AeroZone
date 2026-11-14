@@ -284,7 +284,7 @@ export default function MarsMap(p: Props) {
           const hl = p.highlight?.kind === 'agent' && p.highlight.id === a.id
           return <Marker key={a.id} position={[a.lat, a.lon]} zIndexOffset={hl ? 3200 : 2900}
             icon={markerIcon(a.kind, { name: a.name, highlight: hl, selected: a.id === p.selectedAgent,
-              arrowDeg: hl ? roverScreenAngleDeg(a.yaw_deg, a.lat) : null, speed: a.speed_m_s })}
+              arrowDeg: hl ? roverScreenAngleDeg(a.yaw_deg, a.lat) : null, speed: a.speed_m_s, energy: a.energy })}
             eventHandlers={{ click: e => { L.DomEvent.stopPropagation(e); p.onAgentClick?.(a.id) } }} />
         })}
         {!p.tracking && <Follow point={p.follow ?? null} />}

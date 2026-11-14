@@ -707,6 +707,13 @@ class SimServer:
                     self.nav.set_cruise(v)
                 if target is not None:
                     target.cruise = v                 # kept when the object is deselected
+            elif kind == "set_energy":
+                # Battery / oxygen percentage of one object (testing the low-oxygen alert).
+                a = self._agent_arg(cmd)
+                e = float(cmd["value"])
+                if not math.isfinite(e):
+                    raise ValueError
+                a.energy = min(100.0, max(0.0, e))
             elif kind == "set_warp":
                 wv = float(cmd["value"])
                 if not math.isfinite(wv):

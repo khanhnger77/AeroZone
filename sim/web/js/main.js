@@ -405,9 +405,9 @@ agentsGroup.name = 'agents';
 scene.add(agentsGroup);
 const squares = new Map();     // id -> { sprite, key }
 
-function squareTexture(name, kind, selected) {
+function squareTexture(name, kind, selected, energy) {
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 96;
+  c.width = 256; c.height = 128;
   const g = c.getContext('2d');
   g.font = 'bold 26px system-ui, sans-serif';
   g.textAlign = 'center';
@@ -417,6 +417,14 @@ function squareTexture(name, kind, selected) {
   g.fillRect(110, 50, 36, 36);
   g.lineWidth = selected ? 5 : 3; g.strokeStyle = selected ? '#ffffff' : '#05070a';
   g.strokeRect(110, 50, 36, 36);
+  if (energy !== undefined && energy !== null) {   // battery (vehicles) / O2 (astronauts), as on the map
+    const pct = Math.round(energy);
+    const col = pct > 50 ? '#34d399' : pct >= 30 ? '#facc15' : '#f87171';   // as on the planner map
+    const text = `${kind === 'rover' ? '⚡' : 'O₂'} ${pct}%`;
+    g.font = 'bold 22px system-ui, sans-serif';
+    g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(text, 128, 112);
+    g.fillStyle = col; g.fillText(text, 128, 112);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -427,15 +435,15 @@ function updateSquares() {
   const seen = new Set();
   for (const a of worldState.agents) {
     seen.add(a.id);
-    const key = `${a.name}|${a.kind}|${a.id === worldState.selected}`;
+    const key = `${a.name}|${a.kind}|${a.id === worldState.selected}|${a.energy == null ? '' : Math.round(a.energy)}`;
     let s = squares.get(a.id);
     if (!s || s.key !== key) {
       if (s) { agentsGroup.remove(s.sprite); s.sprite.material.map.dispose(); s.sprite.material.dispose(); }
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: squareTexture(a.name, a.kind, a.id === worldState.selected),
+        map: squareTexture(a.name, a.kind, a.id === worldState.selected, a.energy),
         sizeAttenuation: false, depthTest: false, transparent: true }));
-      sprite.center.set(0.5, 0.0);
-      sprite.scale.set(0.16, 0.06, 1);
+      sprite.center.set(0.5, 0.33);          // anchor at the square's bottom (the % sits below it)
+      sprite.scale.set(0.16, 0.08, 1);
       sprite.renderOrder = 10;
       agentsGroup.add(sprite);
       s = { sprite, key };

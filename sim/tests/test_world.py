@@ -171,3 +171,31 @@ def test_set_speed_of_one_object(terrain_tif, tmp_path):
         r = await (await c.post("/sim/api/command", json={"type": "set_speed", "value": 1, "agent": "zz"})).json()
         assert r["ok"] is False
     run(body, sim)
+
+
+def test_battery_and_oxygen_drain_slowly():
+    w = flat_world()
+    rover = w.add("rover", 0, 0, 0, mode="idle")
+    walker = w.add("astronaut", 50, 0, 0, mode="idle")
+    w.running = True
+    for _ in range(3600):
+        w.step(1.0)                                    # one sim hour, standing still
+    assert rover.energy == pytest.approx(97.0, abs=0.01)
+    assert walker.energy == pytest.approx(89.0, abs=0.01)
+    assert w.describe_agent(rover)["energy"] == pytest.approx(97.0, abs=0.01)
+    w.reset()
+    assert rover.energy == 100.0
+
+
+def test_set_energy_for_testing_alerts(terrain_tif, tmp_path):
+    sim = make_sim(terrain_tif, tmp_path)
+
+    async def body(c):
+        await c.post("/sim/api/world", json={"agents": [{"kind": "rover"}, {"kind": "astronaut"}]})
+        r = await (await c.post("/sim/api/command", json={"type": "set_energy", "agent": "a1", "value": 25})).json()
+        assert r["ok"] and sim.world.agents["a1"].energy == 25
+        r = await (await c.post("/sim/api/command", json={"type": "set_energy", "agent": "a1", "value": 250})).json()
+        assert r["ok"] and sim.world.agents["a1"].energy == 100          # clamped to 0..100
+        r = await (await c.post("/sim/api/command", json={"type": "set_energy", "agent": "zz", "value": 5})).json()
+        assert r["ok"] is False
+    run(body, sim)
