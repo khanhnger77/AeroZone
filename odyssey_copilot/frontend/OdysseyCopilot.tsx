@@ -23,6 +23,7 @@ export interface OdysseyCopilotProps {
   onAction?: (action: CopilotAction) => void;
   currentLocation?: { lon: number; lat: number };
   apiUrl?: string;
+  apiBaseUrl?: string;
 }
 
 interface Message {
@@ -36,8 +37,10 @@ interface Message {
 export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
   onAction,
   currentLocation,
-  apiUrl = '/api/copilot/chat'
+  apiUrl,
+  apiBaseUrl
 }) => {
+  const endpoint = (apiBaseUrl || apiUrl || '/api/copilot/chat');
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [input, setInput] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -84,7 +87,7 @@ export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
 
     try {
       const historyPayload = messages.map(m => ({ role: m.role, content: m.content }));
-      const res = await fetch(apiUrl, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

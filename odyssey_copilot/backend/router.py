@@ -91,14 +91,25 @@ def build_gemini_tools():
     return types.Tool(function_declarations=[func_inspect, func_plan, func_sample])
 
 
-def check_vitals_refusal(message: str) -> Optional[ChatResponse]:
+VITALS_REGEX = re.compile(
+    r"\b("
+    r"o2|oxygen|"
+    r"vitals|vital\s+(?:signs?|stats?|status|telemetry)|"
+    r"vital(?!\s+(?:discovery|landmark|sample|mission|science|finding|clue|component|target|importance|area|traverse|route|observation|step|priority|role|task|detail|significance))|"
+    r"heart[ -]?rate|pulse|blood[ -]?pressure|"
+    r"body[ -]?temp(?:erature)?|biometrics?|"
+    r"suit\s+pressure|respiration|life\s+support|battery\s+(?:level|life)"
+    r")\b",
+    re.IGNORECASE
+)
+
+
+def check_vitals_refusal(message: str = "", text: Optional[str] = None) -> Optional[ChatResponse]:
     """Strict zero-hallucination check: refuse to invent astronaut suit vitals or telemetry."""
-    msg = message.lower()
-    vitals_terms = [
-        "oxygen", "o2", "vital", "heart rate", "pulse", "suit pressure",
-        "biometric", "body temp", "respiration", "life support", "battery level"
-    ]
-    if any(k in msg for k in vitals_terms):
+    query = text if text is not None else message
+    if not query:
+        return None
+    if VITALS_REGEX.search(query):
         return ChatResponse(
             reply="EVA suit telemetry offline / not equipped. Capcom does not monitor internal biometric telemetry. "
                   "Verify suit pressure and O2 reserves on your analog suit console.",
@@ -146,7 +157,10 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
     # 3. Route planning inquiry check
     if any(k in msg for k in ["route", "path", "traverse", "plan", "navigate", "walk"]):
-        cur = request.current_location or {"lon": 77.4509, "lat": 18.4446}
+        loc = request.current_location if isinstance(request.current_location, dict) else {}
+        cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else 77.4509
+        cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else 18.4446
+        cur = {"lon": cur_lon, "lat": cur_lat}
         dest_lon, dest_lat = 77.4060, 18.4588  # Default: Delta Front
 
         if "cheyava" in msg or "25" in msg:
@@ -158,7 +172,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         elif "landing" in msg or "butler" in msg:
             dest_lon, dest_lat = 77.4509, 18.4446
 
-        route_data = plan_route(cur["lon"], cur["lat"], dest_lon, dest_lat)
+        route_data = plan_route(cur.get("lon", 77.4509), cur.get("lat", 18.4446), dest_lon, dest_lat)
         action = CopilotAction(
             action_type="PLAN_ROUTE",
             payload={
@@ -178,25 +192,28 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
     # 4. Terrain inspection inquiry check
     if any(k in msg for k in ["terrain", "slope", "hazard", "roughness", "inspect", "elevation", "grade"]):
-        cur = request.current_location or {"lon": 77.4509, "lat": 18.4446}
+        loc = request.current_location if isinstance(request.current_location, dict) else {}
+        cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else 77.4509
+        cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else 18.4446
 
         # Check if coordinates were supplied in message text
         coord_match = re.search(r"(\d{2}\.\d+)\s*,\s*(\d{2}\.\d+)", msg)
         if coord_match:
             c1, c2 = float(coord_match.group(1)), float(coord_match.group(2))
             if 70.0 <= c1 <= 80.0 and 15.0 <= c2 <= 22.0:
-                cur = {"lon": c1, "lat": c2}
+                cur_lon, cur_lat = c1, c2
             elif 70.0 <= c2 <= 80.0 and 15.0 <= c1 <= 22.0:
-                cur = {"lon": c2, "lat": c1}
+                cur_lon, cur_lat = c2, c1
 
-        t_data = inspect_terrain(cur["lon"], cur["lat"])
+        cur = {"lon": cur_lon, "lat": cur_lat}
+        t_data = inspect_terrain(cur.get("lon", 77.4509), cur.get("lat", 18.4446))
         action = CopilotAction(
             action_type="INSPECT_TERRAIN",
-            payload={"lon": cur["lon"], "lat": cur["lat"], **t_data},
-            description=f"Inspecting terrain at [{cur['lon']:.4f}, {cur['lat']:.4f}]"
+            payload={"lon": cur.get("lon", 77.4509), "lat": cur.get("lat", 18.4446), **t_data},
+            description=f"Inspecting terrain at [{cur.get('lon', 77.4509):.4f}, {cur.get('lat', 18.4446):.4f}]"
         )
         reply = (
-            f"Capcom terrain telemetry check at [{cur['lon']:.4f}°E, {cur['lat']:.4f}°N]: "
+            f"Capcom terrain telemetry check at [{cur.get('lon', 77.4509):.4f}°E, {cur.get('lat', 18.4446):.4f}°N]: "
             f"Elevation: {t_data.get('elevation_m')}m, Slope: {t_data.get('slope_deg')}°, "
             f"Roughness: {t_data.get('roughness_m')}m, Hazard Index: {t_data.get('hazard')}/100 "
             f"(Safe operational envelope: <30.0° slope limit). Telemetry pinned to HUD."
@@ -233,8 +250,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     user_prompt = request.message
     if request.current_location:
-        loc = request.current_location
-        user_prompt = f"[Astronaut EVA Coordinates: lon={loc.get('lon')}, lat={loc.get('lat')}]\n{user_prompt}"
+        loc = request.current_location if isinstance(request.current_location, dict) else {}
+        cur_lon = loc.get("lon", 77.4509) if loc.get("lon") is not None else 77.4509
+        cur_lat = loc.get("lat", 18.4446) if loc.get("lat") is not None else 18.4446
+        user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{user_prompt}"
 
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]))
     gemini_tools = [build_gemini_tools()]

@@ -107,6 +107,13 @@ class TestOdysseyCopilotTools(unittest.TestCase):
         s_unknown = get_sample_info("NonExistentCraterSample999")
         self.assertIn("error", s_unknown)
 
+    def test_empty_sample_query_returns_error(self):
+        """Empty or whitespace-only queries must return an error rather than sample #1."""
+        for empty_q in ["", "   ", "\t", "\n\t\r", None]:
+            res = get_sample_info(empty_q)
+            self.assertIn("error", res)
+            self.assertEqual(res.get("status"), "not_found")
+
     def test_inspect_terrain_in_bounds(self):
         res = inspect_terrain(77.4509, 18.4446)
         self.assertTrue(res.get("inside"))
@@ -151,6 +158,41 @@ class TestOdysseyCopilotRouter(unittest.TestCase):
             self.assertIn("telemetry offline", res.reply.lower())
             self.assertIsNone(res.action)
             self.assertEqual(res.tools_called, [])
+
+    def test_co2_query_not_falsely_refused(self):
+        """Atmospheric CO2 or adjective queries containing 'vital' must not trigger vitals refusal."""
+        valid_queries = [
+            "Is there CO2 in the Martian atmosphere?",
+            "What is the CO2 concentration on Mars?",
+            "This is a vital discovery for planetary science.",
+            "What are the vital landmarks in Jezero?"
+        ]
+        for q in valid_queries:
+            req = ChatRequest(message=q)
+            res = asyncio.run(chat(req))
+            self.assertIsInstance(res, ChatResponse)
+            self.assertNotIn("telemetry offline", res.reply.lower())
+
+    def test_partial_current_location_no_crash(self):
+        """Incomplete location dictionaries must not raise KeyError in offline fallback or chat."""
+        partial_payloads = [
+            {"lat": 18.44},
+            {"lon": 77.45},
+            {"x": 77.4509, "y": 18.4446},
+            {}
+        ]
+        for loc in partial_payloads:
+            req_terrain = ChatRequest(message="inspect terrain", current_location=loc)
+            res_terrain = asyncio.run(chat(req_terrain))
+            self.assertIsInstance(res_terrain, ChatResponse)
+            self.assertIsNotNone(res_terrain.action)
+            self.assertEqual(res_terrain.action.action_type, "INSPECT_TERRAIN")
+
+            req_route = ChatRequest(message="plan route to Delta Front", current_location=loc)
+            res_route = asyncio.run(chat(req_route))
+            self.assertIsInstance(res_route, ChatResponse)
+            self.assertIsNotNone(res_route.action)
+            self.assertEqual(res_route.action.action_type, "PLAN_ROUTE")
 
     def test_chat_sample_query(self):
         req = ChatRequest(message="Give me the science details on Sample #25 Cheyava Falls.")

@@ -388,12 +388,17 @@ def haversine_distance_m(lon1: float, lat1: float, lon2: float, lat2: float) -> 
     return 2.0 * MARS_RADIUS_M * math.asin(math.sqrt(max(0.0, min(1.0, a))))
 
 
-def get_sample_info(sample_query_or_id: Union[str, int]) -> Dict[str, Any]:
+def get_sample_info(sample_query_or_id: Union[str, int, None]) -> Dict[str, Any]:
     """
     Look up sample information by number (1-25) or keyword (e.g. 'Cheyava', 'Sapphire Canyon', 'Berea').
     Returns a dictionary of sample properties or an error dictionary.
     """
+    if sample_query_or_id is None:
+        return {"error": "Empty sample query", "status": "not_found"}
+
     query = str(sample_query_or_id).strip().lower()
+    if not query:
+        return {"error": "Empty sample query", "status": "not_found"}
     
     # Strip prefixes like 'sample #', 'sample', '#'
     stripped = query.replace("sample", "").replace("#", "").strip()
