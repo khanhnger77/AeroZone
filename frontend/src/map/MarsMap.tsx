@@ -44,6 +44,20 @@ interface Props {
   onSampleClick: (no: number) => void
 }
 
+/**
+ * CSS rotation (deg, clockwise) for the east-pointing ➤ rover glyph.
+ *
+ * `yaw_deg` is the sim's ENU heading: counter-clockwise from east (C1). On this plate-carrée map
+ * (EPSG:4326) screen x is proportional to longitude, so a true east step of 1 m is drawn
+ * 1/cos(lat) wider than a north step; the drawn direction is (cos ψ / cos φ, sin ψ). Screen y
+ * grows downwards, hence the minus sign.
+ */
+function roverScreenAngleDeg(yawDeg: number, latDeg: number): number {
+  const psi = (yawDeg * Math.PI) / 180
+  const k = Math.cos((latDeg * Math.PI) / 180)
+  return (-Math.atan2(Math.sin(psi), Math.cos(psi) / k) * 180) / Math.PI
+}
+
 function Events({ onCursor, onMapClick }: Pick<Props, 'onCursor' | 'onMapClick'>) {
   const map = useMapEvents({
     mousemove: (e) => onCursor({ lon: e.latlng.lng, lat: e.latlng.lat }, map.getZoom()),
@@ -206,7 +220,7 @@ export default function MarsMap(p: Props) {
 
         {p.rocks?.map(rock => <CircleMarker key={rock.id} center={[rock.lat, rock.lon]} radius={3} pathOptions={{ color: '#f87171', fillOpacity: 1 }} />)}
         {p.craters?.map(crater => <CircleMarker key={crater.id} center={[crater.lat, crater.lon]} radius={5} pathOptions={{ color: '#fb923c', fillOpacity: 0.4 }} />)}
-        {p.rover && <Marker position={[p.rover.lat, p.rover.lon]} zIndexOffset={3000} icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div style="color:#5ee6ff;font-size:22px;transform:rotate(${90 - p.rover.yaw_deg}deg)">➤</div>` })} />}
+        {p.rover && <Marker position={[p.rover.lat, p.rover.lon]} zIndexOffset={3000} icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div style="color:#5ee6ff;font-size:22px;line-height:22px;text-align:center;transform:rotate(${roverScreenAngleDeg(p.rover.yaw_deg, p.rover.lat)}deg)">➤</div>` })} />}
         <TrackingMode tracking={!!p.tracking} rover={p.rover} route={p.route?.routes.find(r => r.id === selId)?.coordinates} />
         <Events onCursor={p.onCursor} onMapClick={p.onMapClick} />
         <FlyTo flyTo={p.tracking ? null : p.flyTo} />

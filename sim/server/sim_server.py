@@ -21,6 +21,7 @@ import json
 import logging
 import math
 import secrets
+import signal
 import time
 from pathlib import Path
 
@@ -518,15 +519,20 @@ class SimServer:
         self.clients.clear()
 
     async def stop(self) -> None:
-        if self._loop_task is not None:
-            self._loop_task.cancel()
-            try:
-                await self._loop_task
-            except asyncio.CancelledError:
-                pass
-        for task in list(self._background):
-            task.cancel()
-        self.router.close()
+        """Stop the loop and background tasks, then always release the physics client."""
+        try:
+            if self._loop_task is not None:
+                self._loop_task.cancel()
+                try:
+                    await self._loop_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:          # a failed loop must not keep PyBullet open
+                    log.exception("sim loop ended with an error")
+            for task in list(self._background):
+                task.cancel()
+        finally:
+            self.router.close()
 
 
 # ---------------------------------------------------------------------------------------- HTTP
@@ -709,6 +715,7 @@ def make_app(sim: SimServer | None = None) -> web.Application:
 
     async def on_cleanup(app: web.Application) -> None:
         await app[SIM_KEY].stop()
+        log.info("sim loop stopped, physics closed")
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
@@ -724,7 +731,24 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     logging.basicConfig(level=args.log_level.upper(),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    web.run_app(make_app(), host=args.host, port=args.port, access_log=None)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    if hasattr(signal, "SIGBREAK"):
+        # Windows: a launcher stops a child process group with CTRL_BREAK (Ctrl+C cannot be sent to
+        # one), which by default kills the process outright. Python runs a signal handler wherever
+        # the main thread happens to be, often inside the 50 Hz loop task, so raising there would
+        # land in that task and abort cleanup. Instead, schedule aiohttp's GracefulExit as a loop
+        # callback (what aiohttp itself does on POSIX): run_app then closes the WebSockets, stops
+        # the loop task and disconnects PyBullet.
+        def _raise_graceful_exit() -> None:
+            raise web.GracefulExit()
+
+        def _on_break(signum, frame) -> None:
+            loop.call_soon_threadsafe(_raise_graceful_exit)
+
+        signal.signal(signal.SIGBREAK, _on_break)
+    web.run_app(make_app(), host=args.host, port=args.port, access_log=None, loop=loop)
+    log.info("sim server stopped cleanly")
 
 
 if __name__ == "__main__":
