@@ -26,9 +26,9 @@ export function CategoryTag({ c }: { c: DataCategory }) {
 
 export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
       className={`relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-mars ${on ? 'bg-mars shadow-[0_0_12px_rgba(255,106,61,.45)]' : 'bg-line-2'}`}>
-      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      <span aria-hidden="true" className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}`} />
     </button>
   )
 }
