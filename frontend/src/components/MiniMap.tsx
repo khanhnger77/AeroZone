@@ -45,19 +45,23 @@ function LocatorSync({ viewport, onNavigate }: { viewport: MapViewport | null; o
 }
 
 /** A live locator: follows the main view; drag/click/zoom here to navigate it. */
-export default function MiniMap({ aoi, viewport, onNavigate }: {
+export default function MiniMap({ aoi, viewport, onNavigate, embedded = false }: {
   aoi: [[number, number], [number, number]] | null
   viewport: MapViewport | null
   onNavigate: (center: LonLat, zoom: number) => void
+  /** Inside a dock that supplies the frame (glass, corners, rounding): render without its own. */
+  embedded?: boolean
 }) {
   const mola = TREK_LAYERS.find(l => l.id === 'mola')!
   const center = viewport?.center ?? { lon: 77.385, lat: 18.462 }
-  return <section aria-label="Locator map" className="glass hud-corners w-[220px] overflow-hidden rounded-xl">
+  // Scales with the window: 180-280 px wide, map ~55 % of the width tall. The locator re-syncs on
+  // resize (ResizeObserver in LocatorSync), so a size change never desynchronises it.
+  return <section aria-label="Locator map" className={`w-[clamp(180px,16vw,280px)] overflow-hidden ${embedded ? '' : 'glass hud-corners rounded-xl'}`}>
     <div className="flex items-center justify-between px-2.5 py-1.5">
       <span className="label !text-[9px]">Locator · MOLA</span>
       <span className="font-mono text-[9px] text-muted">{Math.abs(center.lat).toFixed(2)}°{center.lat >= 0 ? 'N' : 'S'} {Math.abs(center.lon).toFixed(2)}°{center.lon >= 0 ? 'E' : 'W'}</span>
     </div>
-    <div className="h-[120px] w-full" title="Drag or click to move the main map. Scroll to zoom.">
+    <div className="h-[clamp(96px,8.8vw,154px)] w-full" title="Drag or click to move the main map. Scroll to zoom.">
       <MapContainer crs={L.CRS.EPSG4326} center={[center.lat, center.lon]} zoom={overviewZoom(viewport?.zoom ?? 13)} minZoom={2} maxZoom={12} zoomControl={false} attributionControl={false}
         dragging scrollWheelZoom doubleClickZoom touchZoom keyboard boxZoom={false} className="h-full w-full" aria-label="Interactive locator">
         <TileLayer url={trekUrl(mola)} maxNativeZoom={mola.maxNativeZoom} maxZoom={12} />

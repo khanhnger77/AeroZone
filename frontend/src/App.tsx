@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Crosshair, Minus, Plus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Minus, Plus } from 'lucide-react'
 import MarsMap, { mapRef, ROCK_COLORS, type MapLayerState } from './map/MarsMap'
 import { LANDING_SITE } from './map/geo'
 import { getPoint, loadManifest, loadSamples, loadTraverse, loadWaypoints, planRoute } from './services/api'
@@ -28,6 +28,9 @@ const ElevationProfile = lazy(() => import('./components/ElevationProfile'))
 const PlaceViewer = lazy(() => import('./components/PlaceViewer'))
 const WeatherPanel = lazy(() => import('./components/WeatherPanel'))
 
+/** Width of the expanded top-centre info box (title, status chips, AOI, collapse), measured 514 px. */
+const HUD_BOX_W = 516
+
 const INITIAL_LAYERS: MapLayerState = {
   base: 'viking',
   trek: { ctx: true, hirise: true },
@@ -44,6 +47,60 @@ export default function App() {
   const mobile = useMedia('(max-width: 767px)')
   const [tab, setTab] = useState<Tab>('explorer')
   const [panelOpen, setPanelOpen] = useState(true)
+  // Bottom-centre title/status bar: collapsible, remembered per browser (a per-viewer convenience).
+  const [hudOpen, setHudOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('mo.hudOpen') !== '0' } catch { return true }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('mo.hudOpen', hudOpen ? '1' : '0') } catch { /* storage unavailable */ }
+  }, [hudOpen])
+  // Set when the user expands the box from the pill: it then shows even where the window is too
+  // narrow for it to sit clear of the side panel and Copilot (it layers above them). Collapsing
+  // clears it, so the automatic "pill when there is no room" behaviour returns.
+  const [hudForced, setHudForced] = useState(false)
+  // Responsive layout: the overlays size themselves with the window (clamp), and their positions
+  // come from live measurements published as CSS variables, so the bottom-centre bar and the
+  // elevation profile always centre in the real gap and the Copilot always stops above the dock:
+  //   --mo-left-w  right edge of the left rail + panel + toggle (px from the left edge)
+  //   --mo-dock-w  width of the bottom-right dock row (place card + legend/dock column)
+  //   --mo-dock-h  height of the legend + map dock column (the legend grows with active layers)
+  //   --mo-right-w width of the map dock panel itself: the legend and the top-right Copilot use
+  //                it, so the three right-hand panels form one column of equal width. Unset while
+  //                the dock is hidden, so the Copilot falls back to its own responsive width.
+  const [hudRoom, setHudRoom] = useState<number>(Number.POSITIVE_INFINITY)
+  const leftColRef = useRef<HTMLDivElement>(null)
+  const rightRowRef = useRef<HTMLDivElement>(null)
+  const rightDockRef = useRef<HTMLDivElement>(null)
+  const dockPanelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = document.documentElement
+    const left = leftColRef.current, row = rightRowRef.current, col = rightDockRef.current
+    const panel = dockPanelRef.current
+    if (!left || !row || !col || !panel) return
+    const px = (v: number) => `${Math.round(v)}px`
+    const publish = () => {
+      root.style.setProperty('--mo-left-w', px(left.getBoundingClientRect().right))
+      // Hidden dock (demo, place viewer, profile on small screens): no width to avoid; its corner
+      // then holds the lidar/tracking panels or the viewer, ~520 px tall with their offsets.
+      const hidden = row.offsetParent === null
+      root.style.setProperty('--mo-dock-w', hidden ? '0px' : px(row.getBoundingClientRect().width))
+      root.style.setProperty('--mo-dock-h', hidden ? '520px' : px(col.getBoundingClientRect().height))
+      if (hidden) root.style.removeProperty('--mo-right-w')
+      else root.style.setProperty('--mo-right-w', px(panel.getBoundingClientRect().width))
+      // Room for the top-centre info box: twice the smaller distance from the screen centre to the
+      // left panel's edge or to the Copilot's left edge (it matches the dock width, or its own
+      // responsive width while the dock is hidden), minus a 16 px margin each side.
+      const w = window.innerWidth, half = w / 2
+      const copilotW = hidden ? Math.min(460, Math.max(320, 0.3 * w)) : panel.getBoundingClientRect().width
+      const copilotLeft = w - 12 - copilotW
+      setHudRoom(Math.round(2 * Math.min(half - left.getBoundingClientRect().right, copilotLeft - half) - 32))
+    }
+    publish()
+    const observer = new ResizeObserver(publish)
+    for (const el of [left, row, col, panel]) observer.observe(el)
+    window.addEventListener('resize', publish)
+    return () => { observer.disconnect(); window.removeEventListener('resize', publish) }
+  }, [mobile])                         // these overlays exist only in the desktop layout
   const [briefing, setBriefing] = useState(!seenBriefing())
   const [layers, setLayersState] = useState<MapLayerState>(INITIAL_LAYERS)
   const setLayers = useCallback((fn: (s: MapLayerState) => MapLayerState) => setLayersState(fn), [])
@@ -401,10 +458,10 @@ export default function App() {
       {pointViewer}
 
       {/* ---- left: icon rail + panel ---- */}
-      <div className="pointer-events-none absolute bottom-[60px] left-3 top-3 z-[1000] flex gap-3">
+      <div ref={leftColRef} className="pointer-events-none absolute bottom-[60px] left-3 top-3 z-[1000] flex gap-3">
         <div className="pointer-events-auto"><IconRail tab={tab} open={panelOpen} onSelect={selectTab} onBriefing={() => setBriefing(true)} /></div>
         {panelOpen && (
-          <aside key={tab} className="glass hud-corners slide-in scroll-thin pointer-events-auto relative w-[340px] overflow-y-auto rounded-2xl xl:w-[380px]">
+          <aside key={tab} className="glass hud-corners slide-in scroll-thin pointer-events-auto relative w-[clamp(300px,26vw,420px)] overflow-y-auto rounded-2xl">
             {panelContent}
           </aside>
         )}
@@ -414,39 +471,57 @@ export default function App() {
         </button>
       </div>
 
-      {/* ---- top-right: title HUD + map controls ---- */}
-      <div className="pointer-events-none absolute right-3 top-3 z-[1000] flex flex-col items-end gap-2">
-        <div className="glass hud-corners pointer-events-auto flex items-center gap-4 rounded-xl px-4 py-2.5">
-          <div>
-            <div className="display text-[15px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
-            <div className="label !text-[9px]">Jezero Crater · EVA planning prototype</div>
-            {connectionStatus}
+      {/* ---- top-centre: title + connection status (collapsible) ----
+           Fixed to the middle of the screen, above the other overlays: opening or resizing the side
+           panel, the Copilot or the dock never moves it. When the full box would run into the side
+           panel or the Copilot (narrow windows), the compact pill shows in the same spot. */}
+      <div className="pointer-events-none fixed left-1/2 top-3 z-[1400] -translate-x-1/2">
+        {hudOpen && (hudForced || hudRoom >= HUD_BOX_W) && (
+          <div className="glass hud-corners pointer-events-auto flex items-center gap-4 rounded-xl py-2.5 pl-4 pr-2 fade-in">
+            <div className="shrink-0">
+              <div className="display text-[15px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
+              <div className="label !text-[9px]">Jezero Crater · EVA planning prototype</div>
+              {connectionStatus}
+            </div>
+            <div className="hidden h-8 w-px shrink-0 bg-line-2 lg:block" />
+            <div className="hidden shrink-0 font-mono text-[10.5px] leading-tight text-muted lg:block">
+              <div><span className="text-faint">AOI</span> 77.29–77.47°E</div>
+              <div className="pl-[26px]">18.42–18.51°N</div>
+            </div>
+            <button type="button" onClick={() => { setHudOpen(false); setHudForced(false) }} title="Collapse" aria-label="Collapse mission info" aria-expanded
+              className="grid h-7 w-7 shrink-0 place-items-center self-start rounded-full text-muted hover:bg-white/5 hover:text-ink">
+              <ChevronUp size={15} />
+            </button>
           </div>
-          <div className="hidden h-8 w-px bg-line-2 lg:block" />
-          <div className="hidden font-mono text-[10.5px] leading-tight text-muted lg:block">
-            <div><span className="text-faint">AOI</span> 77.29–77.47°E</div>
-            <div className="pl-[26px]">18.42–18.51°N</div>
-          </div>
-        </div>
-        <div className={demo ? 'hidden' : 'glass pointer-events-auto flex flex-col overflow-hidden rounded-xl'}>
-          {[
-            { l: 'Zoom in', i: <Plus size={16} />, f: () => mapRef.current?.zoomIn() },
-            { l: 'Zoom out', i: <Minus size={16} />, f: () => mapRef.current?.zoomOut() },
-            { l: 'Reset view', i: <Crosshair size={15} />, f: () => fly(77.385, 18.462, 13) },
-          ].map((b, k) => (
-            <button key={b.l} title={b.l} aria-label={b.l} onClick={b.f}
-              className={`grid h-9 w-9 place-items-center text-muted transition-colors hover:bg-white/5 hover:text-ink ${k ? 'border-t border-line' : ''}`}>{b.i}</button>
-          ))}
-        </div>
-        {!demo && <QuickLayers layers={layers} setLayers={setLayers} manifest={manifest} />}
+        )}
+        {/* Compact pill: when collapsed by the user, or when the expanded box would not fit.
+            Clicking it always expands the box (forced above the other panels if space is tight). */}
+        {!(hudOpen && (hudForced || hudRoom >= HUD_BOX_W)) && (
+          <button type="button" onClick={() => { setHudOpen(true); setHudForced(true) }} title="Expand mission info"
+            aria-label="Show mission info" aria-expanded={false}
+            className="glass hud-corners pointer-events-auto flex items-center gap-3 rounded-full py-2.5 pl-5 pr-3 text-muted hover:text-ink fade-in">
+            <span className="display text-[16px] font-bold tracking-[0.2em] text-ink">MARS ODYSSEY</span>
+            {([['Planner', connections.planner], ['Rover sim', connections.sim]] as const).map(([name, state]) => (
+              <i key={name} title={`${name}: ${state}`} aria-label={`${name}: ${state}`}
+                className={`h-2.5 w-2.5 rounded-full ${state === 'online' ? 'bg-emerald-400' : state === 'checking' ? 'animate-pulse bg-amber-300' : 'bg-faint'}`} />
+            ))}
+            <span className="grid h-7 w-7 place-items-center rounded-full border border-line-2 text-ink" aria-hidden="true">
+              <ChevronDown size={16} />
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Fixed dock: selected place sits directly to the left of the locator. */}
-      <div className={`pointer-events-none absolute bottom-[60px] right-3 z-[1200] items-end gap-3 ${demo || placeView ? 'hidden' : profile ? 'hidden xl:flex' : 'flex'}`}>
+      {/* Stays visible with the elevation profile: it used to be hidden below xl whenever a route
+          (and so the profile) was shown, which made the legend vanish e.g. after a demo. The profile
+          now sits between the left panel and this dock using the measured --mo-dock-w. */}
+      <div ref={rightRowRef} className={`pointer-events-none absolute bottom-[60px] right-3 z-[1200] items-end gap-3 ${demo || placeView ? 'hidden' : 'flex'}`}>
         {placeCard}
-        <div className="flex flex-col items-end gap-2">
+        {/* items-stretch: the legend takes the dock's width (one right-hand column, with the Copilot). */}
+        <div ref={rightDockRef} className="flex flex-col items-stretch gap-2">
         {(activeRasters.length > 0 || layers.samples) && (
-          <div className="glass pointer-events-auto w-[220px] space-y-2.5 rounded-xl p-3 fade-in">
+          <div className="glass pointer-events-auto space-y-2.5 rounded-xl p-3 fade-in">
             {activeRasters.slice(-2).map((r) => (
               <div key={r.id}>
                 <div className="mb-1 text-[11px] font-medium">{r.name}</div>
@@ -467,14 +542,30 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="pointer-events-auto"><MiniMap aoi={manifest?.aoi_bounds ?? null} viewport={viewport}
-          onNavigate={(center, z) => mapRef.current?.setView([center.lat, center.lon], z, { animate: false })} /></div>
+        {/* Map dock: layer toggles | zoom bar | locator, one seamless panel. */}
+        <div ref={dockPanelRef} className="glass hud-corners pointer-events-auto flex items-stretch overflow-hidden rounded-xl">
+          <QuickLayers layers={layers} setLayers={setLayers} manifest={manifest} embedded />
+          <div className="flex w-9 shrink-0 flex-col justify-end border-l border-line">
+            {[
+              { l: 'Zoom in', i: <Plus size={16} />, f: () => mapRef.current?.zoomIn() },
+              { l: 'Zoom out', i: <Minus size={16} />, f: () => mapRef.current?.zoomOut() },
+              { l: 'Reset view', i: <Crosshair size={15} />, f: () => fly(77.385, 18.462, 13) },
+            ].map((b, k) => (
+              <button key={b.l} title={b.l} aria-label={b.l} onClick={b.f}
+                className={`grid h-9 w-9 place-items-center text-muted transition-colors hover:bg-white/5 hover:text-ink ${k ? 'border-t border-line' : ''}`}>{b.i}</button>
+            ))}
+          </div>
+          <div className="border-l border-line">
+            <MiniMap aoi={manifest?.aoi_bounds ?? null} viewport={viewport} embedded
+              onNavigate={(center, z) => mapRef.current?.setView([center.lat, center.lon], z, { animate: false })} />
+          </div>
+        </div>
         </div>
       </div>
 
-      {/* ---- bottom-centre: elevation profile ---- */}
+      {/* ---- bottom-centre: elevation profile, above the mission info bar ---- */}
       {profile && (
-        <div className={`absolute bottom-[60px] right-3 z-[1000] xl:right-[244px] ${panelOpen ? 'left-[428px] xl:left-[468px]' : 'left-[92px]'} transition-[left]`}>
+        <div className="absolute bottom-[60px] left-[calc(var(--mo-left-w,92px)+12px)] right-[calc(var(--mo-dock-w,0px)+24px)] z-[1000]">
           {profile}
         </div>
       )}
@@ -492,10 +583,11 @@ export default function App() {
   )
 }
 
-function QuickLayers({ layers, setLayers, manifest }: { layers: MapLayerState; setLayers: (fn: (s: MapLayerState) => MapLayerState) => void; manifest: LayersManifest | null }) {
+function QuickLayers({ layers, setLayers, manifest, embedded = false }: { layers: MapLayerState; setLayers: (fn: (s: MapLayerState) => MapLayerState) => void; manifest: LayersManifest | null; embedded?: boolean }) {
   const items: [string, string][] = [['hirise', 'HiRISE'], ...(manifest?.raster_layers.map((r) => [r.id, r.id[0].toUpperCase() + r.id.slice(1)] as [string, string]) ?? [])]
   return (
-    <div className="glass pointer-events-auto flex flex-col gap-1 rounded-xl p-1.5">
+    // `embedded`: inside the bottom-right map dock, which supplies the frame (no own glass/rounding).
+    <div className={embedded ? 'flex w-[clamp(92px,7.5vw,120px)] shrink-0 flex-col justify-end gap-1 p-1.5' : 'glass pointer-events-auto flex flex-col gap-1 rounded-xl p-1.5'}>
       {items.map(([id, label]) => {
         const on = id === 'hirise' ? !!layers.trek.hirise : !!layers.raster[id]?.on
         return (

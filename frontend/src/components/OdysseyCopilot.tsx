@@ -128,12 +128,16 @@ export function OdysseyCopilot({
   }
 
   return (
-    <div className="fixed bottom-14 right-4 z-[1300] font-mono text-xs select-none">
+    // Top-right on tablets/desktops (the planner's bottom-right holds the map dock); bottom-right on
+    // phones, whose top edge carries the title bar.
+    <div className="fixed bottom-[84px] right-2 z-[1300] font-mono text-xs select-none md:bottom-auto md:right-3 md:top-3">
       {/* Collapsed Floating Dock Pill */}
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-slate-950/90 text-orange-400 border border-orange-500/40 shadow-xl shadow-orange-950/30 backdrop-blur-md hover:border-orange-400 hover:text-orange-300 transition-all cursor-pointer"
+          aria-expanded={false}
+          aria-label="Open EVA Copilot"
+          className="flex items-center justify-center gap-2.5 px-4 py-2.5 md:w-[var(--mo-right-w,auto)] rounded-full bg-slate-950/90 text-orange-400 border border-orange-500/40 shadow-xl shadow-orange-950/30 backdrop-blur-md hover:border-orange-400 hover:text-orange-300 transition-colors cursor-pointer"
         >
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -141,11 +145,13 @@ export function OdysseyCopilot({
           </span>
           <Radio size={14} className="text-orange-500 animate-pulse" />
           <span className="tracking-wider uppercase font-semibold text-[11px]">EVA COPILOT // CAPCOM</span>
-          <ChevronUp size={14} />
+          <ChevronUp size={14} className="md:rotate-180" />
         </button>
       ) : (
-        /* Expanded NASA Mission Control Window */
-        <div className="w-96 md:w-[420px] h-[520px] flex flex-col rounded-xl bg-slate-950/95 border border-orange-500/30 shadow-2xl shadow-orange-950/40 backdrop-blur-lg overflow-hidden transition-all">
+        /* Expanded NASA Mission Control Window. Height is capped to the space above the planner's
+           bottom-right column (legend + map dock), which the planner publishes as --mo-dock-h;
+           96 px = 60 px dock offset + 12 px top inset + 24 px gap. */
+        <div className="w-96 md:w-[var(--mo-right-w,clamp(320px,30vw,460px))] h-[520px] min-h-[240px] max-h-[calc(100vh-120px)] md:max-h-[calc(100vh-var(--mo-dock-h,260px)-96px)] flex flex-col rounded-xl bg-slate-950/95 border border-orange-500/30 shadow-2xl shadow-orange-950/40 backdrop-blur-lg overflow-hidden transition-colors">
           
           {/* Header */}
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-orange-500/20 bg-slate-900/80">
@@ -169,9 +175,10 @@ export function OdysseyCopilot({
               <button 
                 onClick={() => setIsOpen(false)}
                 title="Collapse Dock"
+                aria-label="Collapse EVA Copilot"
                 className="p-1 text-slate-400 hover:text-orange-400 transition-colors cursor-pointer"
               >
-                <ChevronDown size={15} />
+                <ChevronDown size={15} className="md:rotate-180" />
               </button>
             </div>
           </div>
