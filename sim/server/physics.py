@@ -556,7 +556,7 @@ class KinematicRover(_RoverGeometry):
 class RoverModelRouter:
     """Holds both rover models, routes (v, omega) to the active one and owns the step accumulator."""
 
-    def __init__(self, physics_cfg: dict, rover_cfg: dict) -> None:
+    def __init__(self, physics_cfg: dict, rover_cfg: dict, astronaut_cfg: dict | None = None) -> None:
         self.cfg = physics_cfg
         self.rover_cfg = rover_cfg
         self.timestep_s = float(physics_cfg["timestep_s"])
@@ -571,8 +571,17 @@ class RoverModelRouter:
         elif physics_cfg.get("engine", "pybullet") == "pybullet":
             log.warning("pybullet unavailable: falling back to the kinematic rover model")
         self.kinematic = KinematicRover(rover_cfg)
+        # Third model: a suited astronaut on foot (sim/server/walker.py, sim/configs/astronaut.yaml).
+        from sim.server.walker import AstronautWalker   # late import: walker.py imports Pose from here
+        if astronaut_cfg is None:
+            import yaml
+            from pathlib import Path
+            acfg_path = Path(__file__).resolve().parents[1] / "configs" / "astronaut.yaml"
+            astronaut_cfg = yaml.safe_load(acfg_path.read_text()) if acfg_path.exists() else None
+        self.astronaut = AstronautWalker(astronaut_cfg) if astronaut_cfg else None
 
-        self.available: list[str] = (["wheeled"] if self.wheeled else []) + ["kinematic"]
+        self.available: list[str] = ((["wheeled"] if self.wheeled else []) + ["kinematic"]
+                                     + (["astronaut"] if self.astronaut else []))
         wanted = physics_cfg.get("model", "wheeled")
         self.active = self._model(wanted) if wanted in self.available else self.kinematic
         self._preferred = self.active.name     # what the config / user asked for
@@ -589,7 +598,7 @@ class RoverModelRouter:
         self._spawned = False
 
     def _model(self, name: str):
-        return self.wheeled if name == "wheeled" else self.kinematic
+        return {"wheeled": self.wheeled, "astronaut": self.astronaut}.get(name) or self.kinematic
 
     def _event(self, event: str, detail: str) -> None:
         log.warning("physics event %s: %s", event, detail)
@@ -606,6 +615,8 @@ class RoverModelRouter:
         if no tile size holds on this machine, the mission runs on the kinematic model instead."""
         self.grid = grid
         self.kinematic.set_grid(grid)
+        if self.astronaut is not None:
+            self.astronaut.set_grid(grid)
         self._spawned = False
         self._last_good = None
         self.degraded = None
@@ -649,7 +660,8 @@ class RoverModelRouter:
             target.spawn(pose.x, pose.y, yaw, drop=SWITCH_DROP_M)
         else:
             target.spawn(pose.x, pose.y, yaw, v=speed, w=pose.wz)
-            self.wheeled.park()
+            if self.wheeled is not None:
+                self.wheeled.park()
         self.active = target
         self._acc = 0.0
         return True

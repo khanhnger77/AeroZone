@@ -9,6 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getJSON, postJSON, SimSocket, InterpBuffer } from './net.js';
 import { loadGrid, terrainMesh, ribbon, marker, disposeTree } from './terrain.js';
 import { RoverView } from './rover.js';
+import { AstronautView } from './astronaut.js';
 
 const params = new URLSearchParams(location.search);
 const EMBED = params.get('embed') === '1';
@@ -19,6 +20,7 @@ const $ = (id) => document.getElementById(id);
 const POST_HZ = 10;
 const STALE_MS = 1500;
 const CHASE = { back: 11, up: 5.5, tau: 0.25, minClear: 2.0 };
+const CHASE_ON_FOOT = { back: 5.5, up: 2.6, tau: 0.25, minClear: 1.2 };   // astronaut model
 
 // ------------------------------------------------------------------------------- parent window (C7)
 function post(type, payload = {}) {
@@ -114,6 +116,7 @@ let mission = null;
 let grids = null;             // { corridor, context }
 let world = null;             // THREE.Group with everything mission-specific
 let rover = null;
+let astro = null;             // AstronautView, shown when telemetry.model === 'astronaut'
 let arcView = null;
 let loading = null;           // the single in-flight loadMission() promise
 let loadingId = null;         // mission id that load is building
@@ -167,6 +170,8 @@ async function loadMission() {
         if (!ok) toast('NASA rover model unavailable: showing a stand-in', 'warn');
       }
       scene.add(rover.root);
+      if (config.astronaut && !astro) astro = new AstronautView(config.astronaut);
+      if (astro) scene.add(astro.root);
       step('rover', 'done');
 
       buffer.clear();
@@ -305,17 +310,18 @@ function setCamera(mode, force = false) {
 
 function updateCamera(dt) {
   if (cameraMode === 'chase') {
-    const fwd = tmp.set(1, 0, 0).applyQuaternion(rover.root.quaternion);
+    const chase = onFoot() ? CHASE_ON_FOOT : CHASE;
+    const fwd = tmp.set(1, 0, 0).applyQuaternion(activeBody().root.quaternion);
     fwd.y = 0;
     if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0);
     fwd.normalize();
-    const desired = roverPos.clone().addScaledVector(fwd, -CHASE.back);
-    desired.y += CHASE.up;
-    const ground = sampler(desired.x, -desired.z) + CHASE.minClear;
+    const desired = roverPos.clone().addScaledVector(fwd, -chase.back);
+    desired.y += chase.up;
+    const ground = sampler(desired.x, -desired.z) + chase.minClear;
     if (desired.y < ground) desired.y = ground;
     if (!haveCameraFix) { camera.position.copy(desired); haveCameraFix = true; }
-    else camera.position.lerp(desired, 1 - Math.exp(-dt / CHASE.tau));
-    camera.lookAt(roverPos.x, roverPos.y + 1.2, roverPos.z);
+    else camera.position.lerp(desired, 1 - Math.exp(-dt / chase.tau));
+    camera.lookAt(roverPos.x, roverPos.y + (onFoot() ? 1.1 : 1.2), roverPos.z);
   } else if (cameraMode === 'orbit') {
     // Follow the rover: move camera and target by the rover's displacement.
     tmp.subVectors(roverPos, lastRoverPos);
@@ -359,7 +365,7 @@ function fillControls() {
     `<option value="${v}">${v === c.real_max_speed_m_s ? `${v} m/s (real)` : `${v} m/s`}</option>`).join('');
   $('sel-warp').innerHTML = c.warps.map((w) => `<option value="${w}">${w}× time</option>`).join('');
   $('sel-model').innerHTML = c.models.map((m) =>
-    `<option value="${m}">${m === 'wheeled' ? 'Wheeled (PyBullet)' : 'Kinematic'}</option>`).join('');
+    `<option value="${m}">${{ wheeled: 'Wheeled (PyBullet)', kinematic: 'Kinematic', astronaut: 'Astronaut (on foot)' }[m] || m}</option>`).join('');
   $('sel-speed').value = String(c.default_speed_m_s);
 }
 
@@ -433,6 +439,10 @@ window.addEventListener('message', (e) => {
   }
 });
 
+// The figure that carries the pose: the astronaut when the "astronaut" motion model is active.
+function onFoot() { return !!(astro && latest && latest.model === 'astronaut'); }
+function activeBody() { return onFoot() ? astro : rover; }
+
 // ------------------------------------------------------------------------------- frame loop
 const clock = new THREE.Clock();
 function frame() {
@@ -441,9 +451,14 @@ function frame() {
   if (rover && grids) {
     const s = buffer.sample();
     if (s) {
-      rover.setPose(s);
-      rover.setWheels(s.wheels);
-      roverPos.copy(rover.root.position);
+      const foot = onFoot();
+      rover.root.visible = !foot;
+      if (astro) astro.root.visible = foot;
+      const body = activeBody();
+      body.setPose(s);
+      if (foot) astro.setGait(s.wheels && s.wheels[0] ? s.wheels[0].spin : 0, latest ? latest.speed_m_s : 0);
+      else rover.setWheels(s.wheels);
+      roverPos.copy(body.root.position);
     }
     updateCamera(dt);
     sun.target.position.copy(roverPos);

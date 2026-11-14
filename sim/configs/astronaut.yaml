@@ -1,0 +1,14 @@
+# Suited astronaut on foot ("astronaut" motion model, sim/server/walker.py).
+# Values are prototype assumptions, not NASA suit performance data.
+name: EVA astronaut
+height_m: 1.85            # suited, helmet top
+walker:
+  max_speed_m_s: 1.2      # brisk suited walk on flat ground (Apollo EVA traverses ~0.5-1.3 m/s)
+  max_yaw_rate_rad_s: 1.2 # turns much faster than the rover
+  speed_lag_s: 0.35
+  turn_lag_s: 0.25
+  no_go_slope_deg: 30     # same no-go threshold as the M2 route planner
+  min_speed_factor: 0.2   # slowest pace on steep (but walkable) ground, as a fraction of max
+  slope_softening: 0.8    # < 1 flattens Tobler's curve for the suit
+  stride_m: 0.75          # one step; the gait cycle is two steps
+  slope_probe_m: 0.75     # slope is measured over +/- this distance along the heading
