@@ -1,10 +1,16 @@
-"""FastAPI APIRouter for Odyssey Copilot with 2-pass Gemini tool loop and offline fallback."""
+"""FastAPI APIRouter for Odyssey Copilot with 2-pass Gemini/OpenRouter tool loop and offline fallback."""
 from __future__ import annotations
+import json
 import os
 import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from .schemas import ChatRequest, ChatResponse, CopilotAction
 from .prompt import SYSTEM_PROMPT
@@ -19,8 +25,9 @@ from .tools import (
     LANDMARKS_DB
 )
 
-# Model selection: default to gemini-3.5-flash-lite (fast, lightweight, active tier)
+# Model selection: default to gemini-3.5-flash-lite for direct Google API, or google/gemini-2.0-flash-001 for OpenRouter
 DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+DEFAULT_OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 
 router = APIRouter(tags=["copilot"])
 copilot_router = router
@@ -36,16 +43,56 @@ except ImportError:
     genai = None
 
 
+def get_openrouter_credentials() -> tuple[Optional[str], str]:
+    """Return (api_key, model) for OpenRouter if configured."""
+    key = os.environ.get("OPENROUTER_API_KEY")
+    model = os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+
+    # Check if GEMINI_API_KEY in environment was set to an OpenRouter key
+    if not key:
+        g_key = os.environ.get("GEMINI_API_KEY", "")
+        if g_key.startswith("sk-or-v1-"):
+            key = g_key
+
+    # Check .env files if not found in environment
+    if not key:
+        for p in [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]:
+            if p.exists():
+                for line in p.read_text().splitlines():
+                    clean = line.strip()
+                    if clean.startswith("OPENROUTER_API_KEY="):
+                        val = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            key = val
+                    elif clean.startswith("OPENROUTER_MODEL="):
+                        val = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            model = val
+                    elif clean.startswith("GEMINI_API_KEY="):
+                        val = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val.startswith("sk-or-v1-"):
+                            key = val
+            if key:
+                break
+    return key, model
+
+
 def get_gemini_client():
     """Return a google-genai Client if GEMINI_API_KEY or GOOGLE_API_KEY is configured."""
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if api_key and api_key.startswith("sk-or-v1-"):
+        # This is an OpenRouter key, not a Google Gemini key
+        return None
+
     if not api_key:
         for p in [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]:
             if p.exists():
                 for line in p.read_text().splitlines():
                     clean = line.strip()
                     if clean.startswith(("GEMINI_API_KEY=", "GOOGLE_API_KEY=")):
-                        api_key = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        val = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        if not val.startswith("sk-or-v1-"):
+                            api_key = val
                         break
             if api_key:
                 break
@@ -145,6 +192,266 @@ def build_gemini_tools():
         func_inspect, func_plan, func_sample,
         func_weather, func_space_weather, func_geology
     ])
+
+
+OPENROUTER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_terrain",
+            "description": "Inspect terrain elevation, slope, roughness, and hazard index at specific Jezero Crater coordinates (lon, lat)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lon": {"type": "number", "description": "Longitude in degrees East (e.g. 77.4509)"},
+                    "lat": {"type": "number", "description": "Latitude in degrees North (e.g. 18.4446)"}
+                },
+                "required": ["lon", "lat"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_route",
+            "description": "Plan safe least-cost traverse route between two points in Jezero Crater respecting the 30° NO-GO slope limit",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_lon": {"type": "number", "description": "Starting longitude"},
+                    "start_lat": {"type": "number", "description": "Starting latitude"},
+                    "end_lon": {"type": "number", "description": "Destination longitude"},
+                    "end_lat": {"type": "number", "description": "Destination latitude"}
+                },
+                "required": ["start_lon", "start_lat", "end_lon", "end_lat"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sample_info",
+            "description": "Retrieve scientific metadata and coordinates for any of the 25 Perseverance Jezero Crater samples by number (1-25) or name (e.g. 'Cheyava Falls')",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sample_query_or_id": {
+                        "type": "string",
+                        "description": "Sample number (1-25) or feature/target name (e.g. 'Cheyava Falls', 'Sapphire Canyon')"
+                    }
+                },
+                "required": ["sample_query_or_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather_and_climate",
+            "description": "Retrieve Perseverance MEDA meteorological data (temperature, pressure, humidity, wind) and dust storm seasonality for Jezero Crater.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sol": {"type": "integer", "description": "Martian sol number (e.g. 1783, 168). Defaults to latest recorded sol if omitted."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_space_weather_and_radiation",
+            "description": "Retrieve NASA DONKI solar event alerts (CME, SEP), Langlais crustal magnetic field measurements, and EVA radiation hazard levels for Mars.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_geology_context",
+            "description": "Retrieve Stack et al. 2020 geological formation, risk score, trafficability, and THEMIS thermal inertia for Martian coordinates (lon, lat) in Jezero AOI.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lon": {"type": "number", "description": "Longitude in degrees East (e.g. 77.4509)"},
+                    "lat": {"type": "number", "description": "Latitude in degrees North (e.g. 18.4446)"}
+                },
+                "required": ["lon", "lat"]
+            }
+        }
+    }
+]
+
+
+def dispatch_copilot_tool(func_name: str, func_args: Dict[str, Any], cur_lon: float, cur_lat: float) -> tuple[Dict[str, Any], Optional[CopilotAction]]:
+    """Dispatch a tool call by name and arguments, returning (tool_result, copilot_action)."""
+    if func_name == "inspect_terrain":
+        lon = float(func_args.get("lon", cur_lon))
+        lat = float(func_args.get("lat", cur_lat))
+        tool_result = inspect_terrain(lon, lat)
+        action = CopilotAction(
+            action_type="INSPECT_TERRAIN",
+            payload={"lon": lon, "lat": lat, **tool_result},
+            description=f"Inspect terrain at [{lon:.4f}, {lat:.4f}]"
+        )
+        return tool_result, action
+    elif func_name == "plan_route":
+        s_lon = float(func_args.get("start_lon", cur_lon))
+        s_lat = float(func_args.get("start_lat", cur_lat))
+        e_lon = float(func_args.get("end_lon", 77.4060))
+        e_lat = float(func_args.get("end_lat", 18.4588))
+        tool_result = plan_route(s_lon, s_lat, e_lon, e_lat)
+        action = CopilotAction(
+            action_type="PLAN_ROUTE",
+            payload={"start": {"lon": s_lon, "lat": s_lat}, "end": {"lon": e_lon, "lat": e_lat}, **tool_result},
+            description=f"Route planned to [{e_lon:.4f}, {e_lat:.4f}]"
+        )
+        return tool_result, action
+    elif func_name == "get_sample_info":
+        ident = func_args.get("sample_query_or_id") or func_args.get("sample_identifier") or func_args.get("sample_id", "")
+        tool_result = get_sample_info(ident)
+        action = CopilotAction(
+            action_type="FOCUS_SAMPLE",
+            payload=tool_result,
+            description=f"Focus on sample #{tool_result.get('sample_no', 'N/A')}: {tool_result.get('name', 'N/A')}"
+        )
+        return tool_result, action
+    elif func_name == "get_weather_and_climate":
+        sol = func_args.get("sol")
+        tool_result = get_weather_and_climate(sol=int(sol) if sol is not None else None)
+        action = CopilotAction(
+            action_type="SHOW_WEATHER",
+            payload=tool_result,
+            description=f"Perseverance MEDA weather telemetry for Sol {tool_result.get('sol', 'latest')}"
+        )
+        return tool_result, action
+    elif func_name == "get_space_weather_and_radiation":
+        tool_result = get_space_weather_and_radiation()
+        action = CopilotAction(
+            action_type="SHOW_SPACE_WEATHER",
+            payload=tool_result,
+            description="Space weather telemetry: DONKI solar events and crustal magnetic field"
+        )
+        return tool_result, action
+    elif func_name == "get_geology_context":
+        lon = float(func_args.get("lon", cur_lon))
+        lat = float(func_args.get("lat", cur_lat))
+        tool_result = get_geology_context(lon=lon, lat=lat)
+        action = CopilotAction(
+            action_type="TOGGLE_LAYER",
+            payload={"layer": "geologic_units", "unit": tool_result.get("unit_id"), "lon": lon, "lat": lat, **tool_result},
+            description=f"Geological formation at [{lon:.4f}, {lat:.4f}]: {tool_result.get('unit_id', 'Unknown')}"
+        )
+        return tool_result, action
+    else:
+        return {"error": f"Unknown tool: {func_name}"}, None
+
+
+async def chat_openrouter(request: ChatRequest, api_key: str, model: str, cur_lon: float, cur_lat: float) -> ChatResponse:
+    """Execute chat completion and tool calling loop via OpenRouter API."""
+    if httpx is None:
+        return execute_offline_fallback(request)
+
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
+    if request.history:
+        for h in request.history:
+            role = "assistant" if h.get("role") == "model" else "user"
+            messages.append({"role": role, "content": h.get("content", "")})
+
+    user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{request.message}"
+    messages.append({"role": "user", "content": user_prompt})
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://github.com/khanhnger77/AeroZone",
+        "X-Title": "AeroZone Odyssey Copilot",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "tools": OPENROUTER_TOOLS,
+        "tool_choice": "auto",
+        "temperature": 0.2
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            res = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
+        except Exception:
+            return execute_offline_fallback(request)
+
+        if res.status_code != 200:
+            return execute_offline_fallback(request)
+
+        data = res.json()
+        choices = data.get("choices")
+        if not choices:
+            return execute_offline_fallback(request)
+
+        msg = choices[0].get("message", {})
+        tool_calls = msg.get("tool_calls", [])
+
+        if tool_calls:
+            call = tool_calls[0]
+            func_name = call.get("function", {}).get("name", "")
+            raw_args = call.get("function", {}).get("arguments", "{}")
+            if isinstance(raw_args, str):
+                try:
+                    func_args = json.loads(raw_args)
+                except Exception:
+                    func_args = {}
+            elif isinstance(raw_args, dict):
+                func_args = raw_args
+            else:
+                func_args = {}
+
+            tool_result, action = dispatch_copilot_tool(func_name, func_args, cur_lon, cur_lat)
+            tools_called = [func_name]
+
+            # Pass 2: Send tool response back for synthesis
+            messages.append(msg)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.get("id", "call_1"),
+                "name": func_name,
+                "content": json.dumps({"result": tool_result})
+            })
+            pass2_payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.2
+            }
+            try:
+                pass2_res = await client.post("https://openrouter.ai/api/v1/chat/completions", json=pass2_payload, headers=headers)
+                if pass2_res.status_code == 200:
+                    pass2_data = pass2_res.json()
+                    p2_choices = pass2_data.get("choices", [])
+                    reply_text = p2_choices[0].get("message", {}).get("content", "") if p2_choices else ""
+                else:
+                    reply_text = f"Capcom telemetry confirmed. Data for {func_name} received and transmitted to HUD."
+            except Exception:
+                reply_text = f"Capcom telemetry confirmed. Data for {func_name} received and transmitted to HUD."
+
+            if not reply_text:
+                reply_text = f"Capcom telemetry confirmed. Data for {func_name} received and transmitted to HUD."
+
+            return ChatResponse(reply=reply_text, action=action, tools_called=tools_called)
+
+        # No tool calls
+        reply_content = msg.get("content", "")
+        # If model answered directly, check if offline fallback has a matching action
+        fallback_res = execute_offline_fallback(request)
+        if fallback_res.action is not None:
+            return fallback_res
+
+        return ChatResponse(reply=reply_content or "Roger, Capcom standing by.", action=None, tools_called=[])
 
 
 VITALS_REGEX = re.compile(
@@ -404,29 +711,38 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    """Chat endpoint executing the 2-pass Gemini tool loop or offline fallback."""
+    """Chat endpoint executing OpenRouter, Gemini 2-pass tool loop, or deterministic offline fallback."""
     # Pre-check: Strict zero-hallucination vitals refusal
     vitals_refusal = check_vitals_refusal(request.message)
     if vitals_refusal:
         return vitals_refusal
 
+    loc = request.current_location if isinstance(request.current_location, dict) else {}
+    cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else (float(loc.get("x")) if loc.get("x") is not None else 77.4509)
+    cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else (float(loc.get("y")) if loc.get("y") is not None else 18.4446)
+
+    # 1. Check OpenRouter credentials (preferred if configured)
+    openrouter_key, openrouter_model = get_openrouter_credentials()
+    if openrouter_key:
+        try:
+            return await chat_openrouter(request, openrouter_key, openrouter_model, cur_lon, cur_lat)
+        except Exception:
+            # Fall through to Gemini client or offline fallback if OpenRouter network error
+            pass
+
+    # 2. Check direct Google Gemini API client
     client = get_gemini_client()
     if not client:
         return execute_offline_fallback(request)
 
-    # Pass 1: Build input contents for Gemini 2.0 Flash
+    # Pass 1: Build input contents for Gemini
     contents = []
     if request.history:
         for turn in request.history:
             role = "user" if turn.get("role") == "user" else "model"
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=turn.get("content", ""))]))
 
-    user_prompt = request.message
-    loc = request.current_location if isinstance(request.current_location, dict) else {}
-    cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else (float(loc.get("x")) if loc.get("x") is not None else 77.4509)
-    cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else (float(loc.get("y")) if loc.get("y") is not None else 18.4446)
-    user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{user_prompt}"
-
+    user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{request.message}"
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]))
     gemini_tools = [build_gemini_tools()]
     config = types.GenerateContentConfig(
@@ -451,63 +767,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         func_name = call.name
         func_args = dict(call.args) if call.args else {}
         tools_called = [func_name]
-        action = None
-        tool_result: Dict[str, Any] = {}
-
-        if func_name == "inspect_terrain":
-            lon = float(func_args.get("lon", cur_lon))
-            lat = float(func_args.get("lat", cur_lat))
-            tool_result = inspect_terrain(lon, lat)
-            action = CopilotAction(
-                action_type="INSPECT_TERRAIN",
-                payload={"lon": lon, "lat": lat, **tool_result},
-                description=f"Inspect terrain at [{lon:.4f}, {lat:.4f}]"
-            )
-        elif func_name == "plan_route":
-            s_lon = float(func_args.get("start_lon", cur_lon))
-            s_lat = float(func_args.get("start_lat", cur_lat))
-            e_lon = float(func_args.get("end_lon", 77.4060))
-            e_lat = float(func_args.get("end_lat", 18.4588))
-            tool_result = plan_route(s_lon, s_lat, e_lon, e_lat)
-            action = CopilotAction(
-                action_type="PLAN_ROUTE",
-                payload={"start": {"lon": s_lon, "lat": s_lat}, "end": {"lon": e_lon, "lat": e_lat}, **tool_result},
-                description=f"Route planned to [{e_lon:.4f}, {e_lat:.4f}]"
-            )
-        elif func_name == "get_sample_info":
-            ident = func_args.get("sample_query_or_id") or func_args.get("sample_identifier") or func_args.get("sample_id", "")
-            tool_result = get_sample_info(ident)
-            action = CopilotAction(
-                action_type="FOCUS_SAMPLE",
-                payload=tool_result,
-                description=f"Focus on sample #{tool_result.get('sample_no', 'N/A')}: {tool_result.get('name', 'N/A')}"
-            )
-        elif func_name == "get_weather_and_climate":
-            sol = func_args.get("sol")
-            tool_result = get_weather_and_climate(sol=int(sol) if sol is not None else None)
-            action = CopilotAction(
-                action_type="SHOW_WEATHER",
-                payload=tool_result,
-                description=f"Perseverance MEDA weather telemetry for Sol {tool_result.get('sol', 'latest')}"
-            )
-        elif func_name == "get_space_weather_and_radiation":
-            tool_result = get_space_weather_and_radiation()
-            action = CopilotAction(
-                action_type="SHOW_SPACE_WEATHER",
-                payload=tool_result,
-                description="Space weather telemetry: DONKI solar events and crustal magnetic field"
-            )
-        elif func_name == "get_geology_context":
-            lon = float(func_args.get("lon", cur_lon))
-            lat = float(func_args.get("lat", cur_lat))
-            tool_result = get_geology_context(lon=lon, lat=lat)
-            action = CopilotAction(
-                action_type="TOGGLE_LAYER",
-                payload={"layer": "geologic_units", "unit": tool_result.get("unit_id"), "lon": lon, "lat": lat, **tool_result},
-                description=f"Geological formation at [{lon:.4f}, {lat:.4f}]: {tool_result.get('unit_id', 'Unknown')}"
-            )
-        else:
-            tool_result = {"error": f"Unknown tool: {func_name}"}
+        tool_result, action = dispatch_copilot_tool(func_name, func_args, cur_lon, cur_lat)
 
         # Pass 2: Return function response part to Gemini for synthesis
         func_resp_part = types.Part.from_function_response(
