@@ -102,3 +102,5 @@ export interface PointInfo {
 
 export type LonLat = { lon: number; lat: number }
 export type Tab = 'explorer' | 'layers' | 'safety' | 'science' | 'mission'
+
+export interface MapViewport { center: LonLat; zoom: number; bounds: [[number, number], [number, number]] }

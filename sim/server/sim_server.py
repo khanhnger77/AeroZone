@@ -21,6 +21,7 @@ import json
 import logging
 import math
 import secrets
+import signal
 import time
 from pathlib import Path
 
@@ -455,32 +456,44 @@ class SimServer:
         }
 
     async def tick(self, elapsed: float) -> None:
-        """One loop iteration in the C8 call order."""
+        """One loop iteration in the C8 call order.
+
+        All stepping happens before the first ``await``: an await yields to the event loop, where a
+        mission install may run, and the step must never mix the old mission's pose with the new
+        mission's path, terrain or obstacles. Messages are queued and sent at the end, in order.
+        """
         router, nav, avoid = self.router, self.nav, self.avoid
+        outbox: list[tuple[bool, object, str]] = []          # (binary, payload, topic)
         pose = router.pose()
         ev = avoid.tick(pose, nav, router.sim_time)
         if ev is not None:
             msg = dict(ev)
             msg.setdefault("type", "avoid_event")
-            await self.broadcast(msg, "events")
+            outbox.append((False, msg, "events"))
         nav.observe(pose)
         router.set_inputs(*avoid.command(nav.command(), pose, nav))
         router.update(min(elapsed, 0.25), self.warp)
         if avoid.enabled and self._subscribers("lidar") and avoid.stream_due():
-            await self.broadcast_bytes(avoid.encode_frame(pose, nav), "lidar")
+            outbox.append((True, avoid.encode_frame(pose, nav), "lidar"))
 
         pose = router.pose()
         t = self.telemetry(pose)
         t["avoid"] = avoid.status(nav)
-        await self.broadcast(t, "telemetry")
+        outbox.append((False, t, "telemetry"))
 
         max_tilt = float(self.rover_cfg["limits"]["max_tilt_deg"])
         now = time.monotonic()
         if t["tilt_deg"] > max_tilt and now - self._last_tilt_event >= TILT_EVENT_PERIOD_S:
             self._last_tilt_event = now
-            await self.broadcast({"type": "physics_event", "event": "tilt_limit",
-                                  "detail": f"tilt {t['tilt_deg']:.1f} deg exceeds {max_tilt:.0f} deg"},
-                                 "events")
+            outbox.append((False, {"type": "physics_event", "event": "tilt_limit",
+                                   "detail": f"tilt {t['tilt_deg']:.1f} deg exceeds {max_tilt:.0f} deg"},
+                           "events"))
+
+        for binary, payload, topic in outbox:
+            if binary:
+                await self.broadcast_bytes(payload, topic)
+            else:
+                await self.broadcast(payload, topic)
 
     async def run_loop(self) -> None:
         period = 1.0 / self.loop_hz
@@ -506,15 +519,20 @@ class SimServer:
         self.clients.clear()
 
     async def stop(self) -> None:
-        if self._loop_task is not None:
-            self._loop_task.cancel()
-            try:
-                await self._loop_task
-            except asyncio.CancelledError:
-                pass
-        for task in list(self._background):
-            task.cancel()
-        self.router.close()
+        """Stop the loop and background tasks, then always release the physics client."""
+        try:
+            if self._loop_task is not None:
+                self._loop_task.cancel()
+                try:
+                    await self._loop_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:          # a failed loop must not keep PyBullet open
+                    log.exception("sim loop ended with an error")
+            for task in list(self._background):
+                task.cancel()
+        finally:
+            self.router.close()
 
 
 # ---------------------------------------------------------------------------------------- HTTP
@@ -578,9 +596,26 @@ async def handle_command(request: web.Request) -> web.Response:
     return web.json_response(request.app[SIM_KEY].command(body), dumps=dumps)
 
 
+def _stale(request: web.Request, sim: "SimServer") -> web.Response | None:
+    """409 when the page asks (``?m=``) for a mission that is no longer loaded.
+
+    Without this, a mission installed between the page's ``GET api/mission`` and its terrain or
+    texture fetch would hand it another mission's data: a byte-count error ("world not loaded"),
+    or, for a same-size corridor, one mission's ground drawn under the other's rover.
+    """
+    wanted = request.query.get("m")
+    if wanted and wanted != sim.mission_id:
+        return web.json_response({"ok": False, "error": "stale mission", "requested": wanted,
+                                  "mission": sim.mission_id}, status=409)
+    return None
+
+
 async def handle_terrain(request: web.Request) -> web.Response:
     sim = request.app[SIM_KEY]
     level = request.match_info["level"]
+    stale = _stale(request, sim)
+    if stale is not None:
+        return stale
     data = sim.terrain_bytes.get(level)
     if data is None:
         return _error(404, f"no {level} terrain (load a mission first)")
@@ -591,6 +626,9 @@ async def handle_terrain(request: web.Request) -> web.Response:
 async def handle_texture(request: web.Request) -> web.StreamResponse:
     sim = request.app[SIM_KEY]
     level = request.match_info["level"]
+    stale = _stale(request, sim)
+    if stale is not None:
+        return stale
     if sim.mission is None or level not in sim.grids:
         return _error(404, f"no {level} texture (load a mission first)")
     loop = asyncio.get_running_loop()
@@ -614,7 +652,9 @@ def _static_handler(root: Path):
         if not path.is_file():
             raise web.HTTPNotFound()
         ctype = MIME.get(path.suffix.lower(), "application/octet-stream")
-        return web.FileResponse(path, headers={"Content-Type": ctype})
+        # Always revalidate (cheap 304 via ETag): without it browsers cache ES modules
+        # heuristically and keep running an old main.js against an updated server.
+        return web.FileResponse(path, headers={"Content-Type": ctype, "Cache-Control": "no-cache"})
     return handler
 
 
@@ -675,6 +715,7 @@ def make_app(sim: SimServer | None = None) -> web.Application:
 
     async def on_cleanup(app: web.Application) -> None:
         await app[SIM_KEY].stop()
+        log.info("sim loop stopped, physics closed")
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
@@ -690,7 +731,24 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     logging.basicConfig(level=args.log_level.upper(),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    web.run_app(make_app(), host=args.host, port=args.port, access_log=None)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    if hasattr(signal, "SIGBREAK"):
+        # Windows: a launcher stops a child process group with CTRL_BREAK (Ctrl+C cannot be sent to
+        # one), which by default kills the process outright. Python runs a signal handler wherever
+        # the main thread happens to be, often inside the 50 Hz loop task, so raising there would
+        # land in that task and abort cleanup. Instead, schedule aiohttp's GracefulExit as a loop
+        # callback (what aiohttp itself does on POSIX): run_app then closes the WebSockets, stops
+        # the loop task and disconnects PyBullet.
+        def _raise_graceful_exit() -> None:
+            raise web.GracefulExit()
+
+        def _on_break(signum, frame) -> None:
+            loop.call_soon_threadsafe(_raise_graceful_exit)
+
+        signal.signal(signal.SIGBREAK, _on_break)
+    web.run_app(make_app(), host=args.host, port=args.port, access_log=None, loop=loop)
+    log.info("sim server stopped cleanly")
 
 
 if __name__ == "__main__":

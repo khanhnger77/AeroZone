@@ -183,6 +183,94 @@ def step_web() -> None:
 
 
 # ---------------------------------------------------------------- processes
+STOP_GRACE_S = 8.0  # how long servers get to shut down cleanly before they are force-killed
+
+
+class _KillOnCloseJob:
+    """Windows Job Object that kills every process in it when the launcher dies.
+
+    Why: the graceful path below only runs if the launcher itself survives. Closing the terminal,
+    killing pixi, or a crash would otherwise leave the servers running as orphans holding
+    :8000/:8100/:4173. The OS closes the job handle when the launcher exits, by any route, and
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE then terminates every server and its descendants.
+    """
+
+    _EXTENDED_LIMIT_INFO = 9
+    _KILL_ON_JOB_CLOSE = 0x2000
+    CREATE_SUSPENDED = 0x00000004
+
+    def __init__(self) -> None:
+        self.handle = None
+        if not IS_WIN:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class Basic(ctypes.Structure):
+                _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                            ("SchedulingClass", wintypes.DWORD)]
+
+            class Io(ctypes.Structure):
+                _fields_ = [(n, ctypes.c_uint64) for n in ("Read", "Write", "Other", "ReadB", "WriteB", "OtherB")]
+
+            class Extended(ctypes.Structure):
+                _fields_ = [("Basic", Basic), ("Io", Io), ("ProcessMemoryLimit", ctypes.c_size_t),
+                            ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                            ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.CreateJobObjectW.restype = wintypes.HANDLE
+            k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+            k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+            k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+            ntdll = ctypes.WinDLL("ntdll")
+            ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+            job = k32.CreateJobObjectW(None, None)
+            info = Extended()
+            info.Basic.LimitFlags = self._KILL_ON_JOB_CLOSE
+            if job and k32.SetInformationJobObject(job, self._EXTENDED_LIMIT_INFO, ctypes.byref(info),
+                                                   ctypes.sizeof(info)):
+                self.handle, self._k32, self._ntdll = job, k32, ntdll
+        except (OSError, AttributeError):
+            self.handle = None
+
+    def adopt(self, proc: subprocess.Popen) -> None:
+        """Assign a child started with CREATE_SUSPENDED to the job, then let it run.
+
+        Starting it suspended means it cannot spawn grandchildren (npx -> node) before it is in the
+        job; processes created from inside a job are in it too.
+        """
+        handle = int(proc._handle)  # type: ignore[attr-defined]
+        try:
+            if self.handle is not None and not self._k32.AssignProcessToJobObject(self.handle, handle):
+                warn(f"could not tie pid {proc.pid} to the launcher; it may outlive a hard kill")
+        finally:
+            self._ntdll.NtResumeProcess(handle)
+
+
+_JOB: _KillOnCloseJob | None = None
+
+
+def _job() -> _KillOnCloseJob:
+    global _JOB
+    if _JOB is None:
+        _JOB = _KillOnCloseJob()
+    return _JOB
+
+
+def _die_with_parent() -> None:  # pragma: no cover - runs in the forked child (Linux only)
+    """POSIX counterpart of the job: SIGTERM this child if the launcher dies."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass  # macOS has no PDEATHSIG; the graceful path still applies
+
+
 class Child:
     def __init__(self, tag: str, color: str, cmd: list[str], cwd: Path, filter_access: bool = True,
                  only: re.Pattern[str] | None = None):
@@ -190,11 +278,19 @@ class Child:
         kw: dict = {"cwd": cwd, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "bufsize": 1,
                     "text": True, "encoding": "utf-8", "errors": "replace",
                     "env": {**os.environ, "PYTHONUNBUFFERED": "1", "FORCE_COLOR": "1"}}
+        job = _job() if IS_WIN else None
         if IS_WIN:
-            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            if job is not None and job.handle is not None:
+                flags |= _KillOnCloseJob.CREATE_SUSPENDED
+            kw["creationflags"] = flags
         else:
             kw["start_new_session"] = True
+            if sys.platform.startswith("linux"):
+                kw["preexec_fn"] = _die_with_parent
         self.proc = subprocess.Popen(cmd, **kw)
+        if job is not None and job.handle is not None:
+            job.adopt(self.proc)
         self.lines: list[str] = []
         self.listeners: list = []
         threading.Thread(target=self._pump, args=(self.proc.stdout,), daemon=True).start()
@@ -215,7 +311,19 @@ class Child:
     def alive(self) -> bool:
         return self.proc.poll() is None
 
-    def kill(self) -> None:
+    def request_stop(self) -> None:
+        """Ask politely: CTRL_BREAK to the child's process group (Windows) or SIGTERM (POSIX)."""
+        if not self.alive():
+            return
+        try:
+            if IS_WIN:
+                os.kill(self.proc.pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+            else:
+                os.killpg(self.proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass  # no shared console, or already gone: force_kill handles it
+
+    def force_kill(self) -> None:
         if not self.alive():
             return
         try:
@@ -223,22 +331,44 @@ class Child:
                 subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
-                os.killpg(self.proc.pid, signal.SIGTERM)
-                try:
-                    self.proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(self.proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            self.proc.wait(timeout=5)
+        except (ProcessLookupError, PermissionError, OSError, subprocess.TimeoutExpired):
             pass
+
+
+def stop_all(children: list["Child"], grace_s: float = STOP_GRACE_S) -> None:
+    """Stop every child: polite signal to all at once, one shared grace period, then force."""
+    live = [c for c in children if c.alive()]
+    for c in live:
+        c.request_stop()
+    deadline = time.monotonic() + grace_s
+    for c in live:
+        try:
+            c.proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            pass
+    forced = [c.tag for c in live if c.alive()]
+    for c in live:
+        c.force_kill()
+    clean = [c.tag for c in live if c.tag not in forced]
+    if clean:
+        say(f"stopped cleanly: {', '.join(clean)}", "green")
+    if forced:
+        warn(f"force-killed after {grace_s:.0f} s: {', '.join(forced)}")
 
 
 def start_servers() -> list[Child]:
     py = sys.executable
-    npx = which("npx")
+    # Run Vite through node directly: on Windows `npx` is a .cmd batch file, and stopping it makes
+    # cmd.exe ask "Terminate batch job (Y/N)?", which blocks a clean shutdown.
+    vite_js = FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"
+    web_cmd = ([which("node"), str(vite_js)] if vite_js.exists() else [which("npx"), "vite"]) + \
+        ["preview", "--host", "127.0.0.1", "--port", str(PORT_WEB), "--strictPort"]
     return [
         Child("api", "blue", [py, "-m", "uvicorn", "backend.main:app", "--port", str(PORT_API), "--log-level", "warning"], ROOT),
         Child("sim", "magenta", [py, "-m", "sim.server.sim_server", "--port", str(PORT_SIM)], ROOT),
-        Child("web", "green", [npx, "vite", "preview", "--host", "127.0.0.1", "--port", str(PORT_WEB), "--strictPort"], FRONTEND),
+        Child("web", "green", web_cmd, FRONTEND),
     ]
 
 
@@ -389,8 +519,7 @@ def main(argv: list[str] | None = None) -> int:
         rc = 1
     finally:
         say("stopping", "yellow")
-        for c in children:
-            c.kill()
+        stop_all(children)
     return rc
 
 

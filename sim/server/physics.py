@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - depends on the environment
 
 log = logging.getLogger(__name__)
 
+HEIGHTFIELD_TILE_POSTS = 512   # PyBullet heightfields above 512 x 512 posts stop colliding
 SPAWN_DROP_M = 0.3      # spawn height above the ground, so the rover settles onto the terrain
 SWITCH_DROP_M = 0.05    # smaller drop when transferring the pose between models
 STEER_MAX_RATE_RAD_S = 1.0
@@ -132,7 +133,7 @@ class PhysicsWorld:
         p.setTimeStep(self.timestep_s, physicsClientId=self.client)
         p.setPhysicsEngineParameter(numSolverIterations=int(col.get("solver_iterations", 50)),
                                     physicsClientId=self.client)
-        self.terrain_body: int | None = None
+        self.terrain_bodies: list[int] = []
         self.grid = None
         self._z_range = (0.0, 0.0)
 
@@ -145,39 +146,52 @@ class PhysicsWorld:
             "spinningFriction": float(col.get("spinning_friction", 0.002)),
         }
 
-    def set_terrain(self, grid) -> int:
-        """Build the heightfield collider from exactly the grid the browser renders."""
-        if self.terrain_body is not None:
-            p.removeBody(self.terrain_body, physicsClientId=self.client)
-            self.terrain_body = None
+    def set_terrain(self, grid) -> list[int]:
+        """Build the heightfield collider from exactly the grid the browser renders.
+
+        A single PyBullet heightfield silently stops colliding above 512 x 512 posts, and a drive
+        corridor can be up to 2200 posts per side, so the grid is split into tiles of at most
+        `HEIGHTFIELD_TILE_POSTS` per side. Neighbouring tiles share their edge posts, so the surface
+        has no seams and every post keeps its exact height.
+        """
+        for body in self.terrain_bodies:
+            p.removeBody(body, physicsClientId=self.client)
+        self.terrain_bodies = []
         ny, nx = grid.h.shape
-        h_min, h_max = float(grid.h.min()), float(grid.h.max())
+        step = HEIGHTFIELD_TILE_POSTS - 1
+        for j0 in range(0, max(ny - 1, 1), step):
+            for i0 in range(0, max(nx - 1, 1), step):
+                self.terrain_bodies.append(self._add_tile(
+                    grid, j0, i0, grid.h[j0:j0 + HEIGHTFIELD_TILE_POSTS, i0:i0 + HEIGHTFIELD_TILE_POSTS]))
+        self.grid = grid
+        self._z_range = (float(grid.h.min()), float(grid.h.max()))
+        return self.terrain_bodies
+
+    def _add_tile(self, grid, j0: int, i0: int, h: np.ndarray) -> int:
+        tny, tnx = h.shape
         shape = p.createCollisionShape(
             p.GEOM_HEIGHTFIELD,
             meshScale=[grid.dx, grid.dy, 1.0],
-            heightfieldData=grid.h.astype(np.float32).ravel().tolist(),
-            numHeightfieldRows=nx,
-            numHeightfieldColumns=ny,
+            heightfieldData=h.astype(np.float32).ravel().tolist(),
+            numHeightfieldRows=tnx,
+            numHeightfieldColumns=tny,
             physicsClientId=self.client,
         )
         # Bullet centres a heightfield on its x/y extent and on its height range.
-        cx = grid.x0 + 0.5 * (nx - 1) * grid.dx
-        cy = grid.y0 + 0.5 * (ny - 1) * grid.dy
-        cz = 0.5 * (h_min + h_max)
-        self.terrain_body = p.createMultiBody(0, shape, -1, [cx, cy, cz], [0, 0, 0, 1],
-                                              physicsClientId=self.client)
-        p.changeDynamics(self.terrain_body, -1, physicsClientId=self.client, **self.contact_params())
-        self.grid = grid
-        self._z_range = (h_min, h_max)
-        return self.terrain_body
+        cx = grid.x0 + (i0 + 0.5 * (tnx - 1)) * grid.dx
+        cy = grid.y0 + (j0 + 0.5 * (tny - 1)) * grid.dy
+        cz = 0.5 * (float(h.min()) + float(h.max()))
+        body = p.createMultiBody(0, shape, -1, [cx, cy, cz], [0, 0, 0, 1], physicsClientId=self.client)
+        p.changeDynamics(body, -1, physicsClientId=self.client, **self.contact_params())
+        return body
 
     def ground_height_at(self, x: float, y: float) -> float | None:
         """Height of the collider under (x, y) by ray cast, or None outside it."""
-        if self.terrain_body is None:
+        if not self.terrain_bodies:
             return None
         lo, hi = self._z_range
         hit = p.rayTest([x, y, hi + 50.0], [x, y, lo - 50.0], physicsClientId=self.client)[0]
-        if hit[0] != self.terrain_body:
+        if hit[0] not in self.terrain_bodies:
             return None
         return float(hit[3][2])
 

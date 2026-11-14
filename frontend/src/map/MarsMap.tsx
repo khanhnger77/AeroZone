@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import L from 'leaflet'
 import {
   CircleMarker, ImageOverlay, MapContainer, Marker, Pane, Polyline, TileLayer, Tooltip, useMap, useMapEvents,
 } from 'react-leaflet'
-import type { FC, LayersManifest, LonLat, ProfilePoint, RouteResponse, SampleProps } from '../types'
+import type { FC, LayersManifest, LonLat, MapViewport, ProfilePoint, RouteResponse, SampleProps } from '../types'
 import { TREK_ATTRIB, TREK_LAYERS, trekUrl } from './trek'
 import { LANDING_SITE } from './geo'
+import type { SelectedPlace } from '../components/PlaceCard'
+import { PANORAMAS } from '../data/panoramas'
 import type { SimRock, SimCrater, SimTelemetry } from '../services/sim'
 
 export interface MapLayerState {
@@ -18,6 +20,9 @@ export interface MapLayerState {
 }
 
 interface Props {
+  place?: SelectedPlace | null
+  showPlaces?: boolean
+  onPanoramaClick?: (point: SelectedPlace) => void
   tracking?: boolean
   rover?: SimTelemetry | null
   rocks?: SimRock[]
@@ -39,18 +44,46 @@ interface Props {
   /** extra padding [top-left, bottom-right] in px when fitting a route, so HUD panels don't hide it */
   fitPadding?: [[number, number], [number, number]]
   flyTo: { lon: number; lat: number; zoom: number; key: number } | null
+  onViewportChange: (viewport: MapViewport) => void
   onCursor: (p: LonLat | null, zoom: number) => void
   onMapClick: (p: LonLat) => void
   onSampleClick: (no: number) => void
 }
 
-function Events({ onCursor, onMapClick }: Pick<Props, 'onCursor' | 'onMapClick'>) {
-  const map = useMapEvents({
+/**
+ * CSS rotation (deg, clockwise) for the east-pointing ➤ rover glyph.
+ *
+ * `yaw_deg` is the sim's ENU heading: counter-clockwise from east (C1). On this plate-carrée map
+ * (EPSG:4326) screen x is proportional to longitude, so a true east step of 1 m is drawn
+ * 1/cos(lat) wider than a north step; the drawn direction is (cos ψ / cos φ, sin ψ). Screen y
+ * grows downwards, hence the minus sign.
+ */
+function roverScreenAngleDeg(yawDeg: number, latDeg: number): number {
+  const psi = (yawDeg * Math.PI) / 180
+  const k = Math.cos((latDeg * Math.PI) / 180)
+  return (-Math.atan2(Math.sin(psi), Math.cos(psi) / k) * 180) / Math.PI
+}
+
+function Events({ onCursor, onMapClick, onViewportChange }: Pick<Props, 'onCursor' | 'onMapClick' | 'onViewportChange'>) {
+  const map = useMap()
+  const viewportFrame = useRef<number | null>(null)
+  const reportViewport = useCallback(() => {
+    if (viewportFrame.current !== null) return
+    viewportFrame.current = requestAnimationFrame(() => {
+      viewportFrame.current = null
+      const center = map.getCenter(), bounds = map.getBounds()
+      onViewportChange({ center: { lon: center.lng, lat: center.lat }, zoom: map.getZoom(), bounds: [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]] })
+    })
+  }, [map, onViewportChange])
+  useMapEvents({
     mousemove: (e) => onCursor({ lon: e.latlng.lng, lat: e.latlng.lat }, map.getZoom()),
     mouseout: () => onCursor(null, map.getZoom()),
     zoomend: () => onCursor(null, map.getZoom()),
+    move: reportViewport,
+    moveend: reportViewport,
     click: (e) => onMapClick({ lon: e.latlng.lng, lat: e.latlng.lat }),
   })
+  useEffect(() => { reportViewport(); return () => { if (viewportFrame.current !== null) cancelAnimationFrame(viewportFrame.current); viewportFrame.current = null } }, [reportViewport])
   return null
 }
 
@@ -109,6 +142,7 @@ export default function MarsMap(p: Props) {
   )
   const startIcon = useMemo(() => flagIcon('#22c55e'), [])
   const endIcon = useMemo(() => flagIcon('#ff6a3d'), [])
+  const panoramaIcon = useMemo(() => L.divIcon({ className: '', iconSize: [36, 24], iconAnchor: [18, 12], html: '<span class="mo-panorama-pin">360°</span>' }), [])
 
   return (
     <div className={`relative h-full w-full ${p.pickMode ? 'mo-crosshair' : ''}`}>
@@ -206,9 +240,13 @@ export default function MarsMap(p: Props) {
 
         {p.rocks?.map(rock => <CircleMarker key={rock.id} center={[rock.lat, rock.lon]} radius={3} pathOptions={{ color: '#f87171', fillOpacity: 1 }} />)}
         {p.craters?.map(crater => <CircleMarker key={crater.id} center={[crater.lat, crater.lon]} radius={5} pathOptions={{ color: '#fb923c', fillOpacity: 0.4 }} />)}
-        {p.rover && <Marker position={[p.rover.lat, p.rover.lon]} zIndexOffset={3000} icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div style="color:#5ee6ff;font-size:22px;transform:rotate(${90 - p.rover.yaw_deg}deg)">➤</div>` })} />}
+        {p.rover && <Marker position={[p.rover.lat, p.rover.lon]} zIndexOffset={3000} icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div style="color:#5ee6ff;font-size:22px;line-height:22px;text-align:center;transform:rotate(${roverScreenAngleDeg(p.rover.yaw_deg, p.rover.lat)}deg)">➤</div>` })} />}
         <TrackingMode tracking={!!p.tracking} rover={p.rover} route={p.route?.routes.find(r => r.id === selId)?.coordinates} />
-        <Events onCursor={p.onCursor} onMapClick={p.onMapClick} />
+        {p.showPlaces && !p.tracking && PANORAMAS.filter(site => site.id !== 'van-zyl' || p.crisp).map(site => <Marker key={site.id} position={[site.lat, site.lon]} icon={panoramaIcon} zIndexOffset={2500} title={`360° panorama: ${site.name}`} alt={`360° panorama: ${site.name}`} eventHandlers={{ click: () => p.onPanoramaClick?.(site) }}>
+          <Tooltip className="mo-tip">{site.name} · panorama sol {site.sols}</Tooltip>
+        </Marker>)}
+        {p.place && p.showPlaces && <CircleMarker center={[p.place.lat, p.place.lon]} radius={7} pathOptions={{ color: '#5ee6ff', fillOpacity: .3, weight: 2 }} interactive={false} />}
+        <Events onViewportChange={p.onViewportChange} onCursor={p.onCursor} onMapClick={p.onMapClick} />
         <FlyTo flyTo={p.tracking ? null : p.flyTo} />
         <FitRoute route={p.route} pad={p.fitPadding ?? [[470, 90], [260, 230]]} />
         <MapApi />
