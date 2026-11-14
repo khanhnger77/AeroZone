@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from .services.routing import RouteError, plan_routes
 from .services.terrain import ROOT, get_terrain
+from odyssey_copilot.backend.router import router as copilot_router
 
 # ---------------------------------------------------------------- configuration
 SAMPLES_PATH = ROOT / "frontend/public/data/samples.geojson"
@@ -42,6 +43,7 @@ IMAGE_FILE_KEYS = ("small", "medium", "large", "full_res")
 
 app = FastAPI(title="MARS ODYSSEY API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(copilot_router, prefix="/api/copilot")
 
 
 @app.exception_handler(RequestValidationError)

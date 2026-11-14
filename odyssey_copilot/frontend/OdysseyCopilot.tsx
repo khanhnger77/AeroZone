@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react'
 import { 
   Terminal, 
   Send, 
@@ -11,82 +11,83 @@ import {
   Route, 
   Sparkles,
   RefreshCw
-} from 'lucide-react';
+} from 'lucide-react'
 
 export interface CopilotAction {
-  action_type: 'INSPECT_TERRAIN' | 'PLAN_ROUTE' | 'FOCUS_SAMPLE' | 'NAVIGATE_WAYPOINT' | string;
-  payload: Record<string, any>;
-  description: string;
+  action_type: 'INSPECT_TERRAIN' | 'PLAN_ROUTE' | 'FOCUS_SAMPLE' | 'NAVIGATE_WAYPOINT' | 'SHOW_WEATHER' | 'SHOW_SPACE_WEATHER' | 'TOGGLE_LAYER' | string
+  payload: Record<string, any>
+  description: string
 }
 
 export interface OdysseyCopilotProps {
-  onAction?: (action: CopilotAction) => void;
-  currentLocation?: { lon: number; lat: number };
-  apiUrl?: string;
-  apiBaseUrl?: string;
+  onAction?: (action: CopilotAction) => void
+  currentLocation?: { lon: number; lat: number }
+  apiUrl?: string
+  apiBaseUrl?: string
 }
 
 interface Message {
-  role: 'user' | 'model';
-  content: string;
-  action?: CopilotAction;
-  tools?: string[];
-  timestamp: string;
+  role: 'user' | 'model'
+  content: string
+  action?: CopilotAction
+  tools?: string[]
+  timestamp: string
 }
 
-export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
+export function OdysseyCopilot({
   onAction,
   currentLocation,
   apiUrl,
-  apiBaseUrl
-}) => {
-  const endpoint = (apiBaseUrl || apiUrl || '/api/copilot/chat');
-  const [isOpen, setIsOpen] = useState<boolean>(true);
-  const [input, setInput] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  apiBaseUrl,
+}: OdysseyCopilotProps) {
+  const endpoint = apiBaseUrl || apiUrl || '/api/copilot/chat'
+  const [isOpen, setIsOpen] = useState<boolean>(true)
+  const [input, setInput] = useState<string>('')
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'model',
       content: 'ODYSSEY CAPCOM online. Standing by for Jezero Crater EVA queries, terrain inspection, and route navigation.',
       timestamp: '00:00:00'
     }
-  ]);
+  ])
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   useEffect(() => {
     if (isOpen) {
-      scrollToBottom();
+      scrollToBottom()
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen])
 
   const quickPrompts = [
-    { label: 'Sample #25 Cheyava Falls', prompt: 'Analyze Sample #25 Cheyava Falls and focus on its coordinates.' },
-    { label: 'Inspect Terrain Slope', prompt: 'Inspect terrain elevation and slope hazard at my current waypoint.' },
-    { label: 'Plan Route to Delta Front', prompt: 'Plan safe traverse route to the Delta Front scarp.' },
-    { label: 'Séítah Samples', prompt: 'What samples were collected at Séítah?' }
-  ];
+    { label: '🌤️ MEDA Weather', prompt: 'Tình hình thời tiết MEDA, áp suất và mùa bão bụi trên Sao Hỏa hôm nay thế nào?' },
+    { label: '⚡ Space Radiation', prompt: 'Kiểm tra cảnh báo bão mặt trời CME và rủi ro bức xạ từ NASA DONKI' },
+    { label: '🪨 Geological Units', prompt: 'Khu vực này thuộc địa tầng nào và suất quán tính nhiệt bề mặt có an toàn không?' },
+    { label: '📍 Sample #25', prompt: 'Phân tích mẫu đá Cheyava Falls #25 và tiềm năng sinh học cổ đại' },
+    { label: '🗺️ Safe Route', prompt: 'Tìm đường đi an toàn nhất từ điểm hạ cánh Octavia E. Butler đến Cheyava Falls' },
+  ]
 
   const handleSend = async (messageText?: string) => {
-    const query = (messageText || input).trim();
-    if (!query || loading) return;
+    const query = (messageText || input).trim()
+    if (!query || loading) return
 
-    setError(null);
-    setInput('');
-    const now = new Date().toTimeString().split(' ')[0];
+    setError(null)
+    setInput('')
+    const now = new Date().toTimeString().split(' ')[0]
     
     // Add user message to history
-    const userMsg: Message = { role: 'user', content: query, timestamp: now };
-    setMessages(prev => [...prev, userMsg]);
-    setLoading(true);
+    const userMsg: Message = { role: 'user', content: query, timestamp: now }
+    setMessages(prev => [...prev, userMsg])
+    setLoading(true)
 
     try {
-      const historyPayload = messages.map(m => ({ role: m.role, content: m.content }));
+      const historyPayload = messages.map(m => ({ role: m.role, content: m.content }))
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -95,36 +96,37 @@ export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
           history: historyPayload,
           current_location: currentLocation
         })
-      });
+      })
 
       if (!res.ok) {
-        throw new Error(`Capcom telemetry link returned status ${res.status}`);
+        throw new Error(`Capcom telemetry link returned status ${res.status}`)
       }
 
-      const data = await res.json();
+      const data = await res.json()
       const modelMsg: Message = {
         role: 'model',
         content: data.reply || 'Roger, Capcom standing by.',
         action: data.action || undefined,
         tools: data.tools_called || undefined,
         timestamp: new Date().toTimeString().split(' ')[0]
-      };
+      }
 
-      setMessages(prev => [...prev, modelMsg]);
+      setMessages(prev => [...prev, modelMsg])
 
       // Automatically emit typed map action
       if (data.action && onAction) {
-        onAction(data.action);
+        onAction(data.action)
       }
-    } catch (err: any) {
-      setError(err.message || 'Telemetry link failed');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      setError(errMsg || 'Telemetry link failed')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 font-mono text-xs select-none">
+    <div className="fixed bottom-14 right-4 z-[1300] font-mono text-xs select-none">
       {/* Collapsed Floating Dock Pill */}
       {!isOpen ? (
         <button
@@ -202,7 +204,7 @@ export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
           {/* Message List */}
           <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
             {messages.map((m, idx) => {
-              const isUser = m.role === 'user';
+              const isUser = m.role === 'user'
               return (
                 <div key={idx} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mb-1 px-1">
@@ -247,7 +249,7 @@ export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
                     )}
                   </div>
                 </div>
-              );
+              )
             })}
 
             {loading && (
@@ -292,7 +294,7 @@ export const OdysseyCopilot: React.FC<OdysseyCopilotProps> = ({
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default OdysseyCopilot;
+export default OdysseyCopilot

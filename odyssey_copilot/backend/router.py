@@ -12,6 +12,9 @@ from .tools import (
     get_sample_info,
     inspect_terrain,
     plan_route,
+    get_weather_and_climate,
+    get_space_weather_and_radiation,
+    get_geology_context,
     SAMPLES_DB,
     LANDMARKS_DB
 )
@@ -102,7 +105,46 @@ def build_gemini_tools():
         }
     )
 
-    return types.Tool(function_declarations=[func_inspect, func_plan, func_sample])
+    func_weather = types.FunctionDeclaration(
+        name="get_weather_and_climate",
+        description="Retrieve Perseverance MEDA meteorological data (temperature, pressure, humidity, wind) and dust storm seasonality for Jezero Crater.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "sol": {
+                    "type": "INTEGER",
+                    "description": "Martian sol number (e.g. 1783, 168). Defaults to latest recorded sol if omitted."
+                }
+            }
+        }
+    )
+
+    func_space_weather = types.FunctionDeclaration(
+        name="get_space_weather_and_radiation",
+        description="Retrieve NASA DONKI solar event alerts (CME, SEP), Langlais crustal magnetic field measurements, and EVA radiation hazard levels for Mars.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {}
+        }
+    )
+
+    func_geology = types.FunctionDeclaration(
+        name="get_geology_context",
+        description="Retrieve Stack et al. 2020 geological formation, risk score, trafficability, and THEMIS thermal inertia for Martian coordinates (lon, lat) in Jezero AOI.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "lon": {"type": "NUMBER", "description": "Longitude in degrees East (e.g. 77.4509)"},
+                "lat": {"type": "NUMBER", "description": "Latitude in degrees North (e.g. 18.4446)"}
+            },
+            "required": ["lon", "lat"]
+        }
+    )
+
+    return types.Tool(function_declarations=[
+        func_inspect, func_plan, func_sample,
+        func_weather, func_space_weather, func_geology
+    ])
 
 
 VITALS_REGEX = re.compile(
@@ -134,7 +176,7 @@ def check_vitals_refusal(message: str = "", text: Optional[str] = None) -> Optio
 
 
 def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
-    """Deterministic fallback engine when GEMINI_API_KEY is not set or network is offline."""
+    """Deterministic fallback engine for English and Vietnamese queries when offline or rate-limited."""
     # 1. Zero-hallucination vitals check
     vitals_refusal = check_vitals_refusal(request.message)
     if vitals_refusal:
@@ -142,20 +184,133 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
     msg = request.message.lower()
 
-    # Detect route-planning intent FIRST (before sample name scan),
-    # so "find a route to Cheyava Falls" is not mistaken for a sample query.
+    # Current location extraction with fallback for missing/partial keys
+    loc = request.current_location if isinstance(request.current_location, dict) else {}
+    cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else (float(loc.get("x")) if loc.get("x") is not None else 77.4509)
+    cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else (float(loc.get("y")) if loc.get("y") is not None else 18.4446)
+
+    # Coordinates in message text override
+    coord_match = re.search(r"(\d{2}\.\d+)\s*,\s*(\d{2}\.\d+)", msg)
+    if coord_match:
+        c1, c2 = float(coord_match.group(1)), float(coord_match.group(2))
+        if 70.0 <= c1 <= 80.0 and 15.0 <= c2 <= 22.0:
+            cur_lon, cur_lat = c1, c2
+        elif 70.0 <= c2 <= 80.0 and 15.0 <= c1 <= 22.0:
+            cur_lon, cur_lat = c2, c1
+
+    # Detect route-planning intent FIRST (before sample name scan)
     ROUTE_KEYWORDS = [
         "route", "path", "traverse", "navigate", "walk", "way to",
         "đường", "đi đến", "tìm đường", "lộ trình",
         "an toàn nhất", "safest", "how to get", "get to", "go to",
-        "từ vị trí", "từ", "đến",
+        "từ vị trí", "từ", "đến"
     ]
     is_route_intent = any(k in msg for k in ROUTE_KEYWORDS)
 
-    # 2. Sample inquiry check — skipped when user clearly asks for a route
+    # 2. Space Weather & Radiation inquiry check (Vietnamese & English)
+    SPACE_WEATHER_KEYWORDS = [
+        "bức xạ", "không gian", "bão mặt trời", "từ trường", "cme", "sep", "donki", "tia vũ trụ",
+        "radiation", "space weather", "solar storm", "magnetic field", "crustal", "cosmic ray", "coronal mass"
+    ]
+    if any(k in msg for k in SPACE_WEATHER_KEYWORDS):
+        sw_data = get_space_weather_and_radiation()
+        action = CopilotAction(
+            action_type="SHOW_SPACE_WEATHER",
+            payload=sw_data,
+            description="Space weather telemetry: NASA DONKI solar events and crustal magnetic field"
+        )
+        is_vi = any(k in msg for k in ["bức xạ", "bão mặt trời", "từ trường", "không gian", "tia vũ trụ"])
+        b_surf = sw_data.get("magnetic_field", {}).get("jezero_surface_b_nT", 86.32)
+        latest_cme = sw_data.get("space_weather", {}).get("latest_cme", {})
+        cme_id = latest_cme.get("id", "N/A") if latest_cme else "N/A"
+        if is_vi:
+            reply = (
+                f"Capcom cảnh báo bức xạ và thời tiết không gian: "
+                f"Từ trường vỏ bề mặt Jezero đạt {b_surf:.2f} nT (~500 lần yếu hơn Trái Đất, chắn bức xạ không đáng kể). "
+                f"Mức độ rủi ro bức xạ: {sw_data.get('radiation_risk_level', 'ELEVATED')}. "
+                f"Tổng số sự kiện DONKI ghi nhận: {sw_data.get('space_weather', {}).get('total_recorded_events', 890)} (CME: {sw_data.get('space_weather', {}).get('cme_count', 583)}). "
+                f"Sự kiện CME gần nhất: {cme_id}. Hướng dẫn vận hành: {sw_data.get('operational_guidance')}."
+            )
+        else:
+            reply = (
+                f"Capcom space weather telemetry: "
+                f"Jezero surface crustal magnetic field: {b_surf:.2f} nT (~500x weaker than Earth, negligible GCR shielding). "
+                f"Radiation risk level: {sw_data.get('radiation_risk_level', 'ELEVATED')}. "
+                f"Recorded DONKI events: {sw_data.get('space_weather', {}).get('total_recorded_events', 890)} (CMEs: {sw_data.get('space_weather', {}).get('cme_count', 583)}). "
+                f"Latest CME: {cme_id}. Operational guidance: {sw_data.get('operational_guidance')}."
+            )
+        return ChatResponse(reply=reply, action=action, tools_called=["get_space_weather_and_radiation"])
+
+    # 3. Weather & Climate inquiry check (Vietnamese & English)
+    WEATHER_KEYWORDS = [
+        "thời tiết", "khí hậu", "áp suất", "nhiệt độ", "độ ẩm", "gió",
+        "bão bụi", "meda", "weather", "climate", "temperature", "pressure",
+        "humidity", "wind", "dust storm", "duststorm"
+    ]
+    if any(k in msg for k in WEATHER_KEYWORDS) or ("sol" in msg and any(w in msg for w in ["hôm nay", "today", "báo cáo", "report", "stats", "telemetry"])):
+        sol_match = re.search(r"sol\s*[:=]?\s*(\d+)", msg)
+        sol_val = int(sol_match.group(1)) if sol_match else None
+        w_data = get_weather_and_climate(sol=sol_val)
+        action = CopilotAction(
+            action_type="SHOW_WEATHER",
+            payload=w_data,
+            description=f"Perseverance MEDA weather telemetry for Sol {w_data.get('sol')}"
+        )
+        is_vi = any(k in msg for k in ["thời tiết", "hôm nay", "thế nào", "áp suất", "nhiệt độ", "bão bụi", "báo cáo", "khí hậu"])
+        if is_vi:
+            reply = (
+                f"Capcom đây. Báo cáo thời tiết trạm MEDA Sol {w_data.get('sol')} tại Jezero: "
+                f"Nhiệt độ trung bình {w_data.get('t_air_mean_c')}°C ({w_data.get('t_air_min_c')}°C đến {w_data.get('t_air_max_c')}°C / {w_data.get('t_air_mean_k')}K). "
+                f"Áp suất bề mặt: {w_data.get('p_mean_pa')} Pa (~0.73% bar Trái Đất). Độ ẩm tương đối: {w_data.get('rh_mean_pct')}%. "
+                f"Thành phần: {w_data.get('atmosphere_composition')}. "
+                f"Mùa bão bụi: {w_data.get('dust_storm_seasonality', {}).get('risk_level', 'MODERATE')} (đỉnh điểm tại Ls 180°-240°). Telemetry đã đồng bộ lên HUD."
+            )
+        else:
+            reply = (
+                f"Capcom here with Perseverance MEDA weather for Sol {w_data.get('sol')}: "
+                f"Mean air temperature {w_data.get('t_air_mean_c')}°C ({w_data.get('t_air_min_c')}°C to {w_data.get('t_air_max_c')}°C / {w_data.get('t_air_mean_k')}K). "
+                f"Surface pressure: {w_data.get('p_mean_pa')} Pa (0.73% bar). Relative humidity: {w_data.get('rh_mean_pct')}%. "
+                f"Atmosphere: {w_data.get('atmosphere_composition')}. "
+                f"Regional dust storm risk: {w_data.get('dust_storm_seasonality', {}).get('risk_level', 'MODERATE')} (peak risk at Ls 180°-240°). Telemetry pinned to HUD."
+            )
+        return ChatResponse(reply=reply, action=action, tools_called=["get_weather_and_climate"])
+
+    # 4. Geology & Trafficability inquiry check (Vietnamese & English)
+    GEOLOGY_KEYWORDS = [
+        "địa chất", "địa tầng", "đất đá", "lún", "sa lầy", "quán tính nhiệt", "themis",
+        "máaz", "séítah", "geology", "geological", "formation", "trafficability",
+        "thermal inertia", "rock type", "sinkage", "bedrock"
+    ]
+    if any(k in msg for k in GEOLOGY_KEYWORDS):
+        geo_data = get_geology_context(cur_lon, cur_lat)
+        action = CopilotAction(
+            action_type="TOGGLE_LAYER",
+            payload={"layer": "geologic_units", "unit": geo_data.get("unit_id"), "lon": cur_lon, "lat": cur_lat, **geo_data},
+            description=f"Geological formation at [{cur_lon:.4f}, {cur_lat:.4f}]: {geo_data.get('unit_id', 'Unknown')}"
+        )
+        is_vi = any(k in msg for k in ["địa chất", "địa tầng", "lún", "sa lầy", "đất đá", "quán tính nhiệt"])
+        if is_vi:
+            reply = (
+                f"Capcom phân tích địa chất tại tọa độ [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
+                f"Đơn vị địa chất: {geo_data.get('unit_name')} (Nhóm: {geo_data.get('group')}, Chỉ số rủi ro: {geo_data.get('risk_score')}/100). "
+                f"Khả năng di chuyển (Trafficability): {geo_data.get('trafficability')}. "
+                f"Quán tính nhiệt THEMIS: {geo_data.get('thermal_inertia', {}).get('rating')}. "
+                f"Ý nghĩa địa chất: {geo_data.get('formation_interpretation')}. Lớp bản đồ địa chất đã kích hoạt."
+            )
+        else:
+            reply = (
+                f"Capcom geological assessment at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
+                f"Unit: {geo_data.get('unit_name')} (Group: {geo_data.get('group')}, Risk Score: {geo_data.get('risk_score')}/100). "
+                f"Trafficability: {geo_data.get('trafficability')}. "
+                f"THEMIS Thermal Inertia: {geo_data.get('thermal_inertia', {}).get('rating')} ({geo_data.get('thermal_inertia', {}).get('surface_character')}). "
+                f"Interpretation: {geo_data.get('formation_interpretation')}. Geological layer toggled on map."
+            )
+        return ChatResponse(reply=reply, action=action, tools_called=["get_geology_context"])
+
+    # 5. Sample inquiry check — skipped when user clearly asks for a route
     found_sample = None
     if not is_route_intent:
-        sample_match = re.search(r"sample\s*(?:#|\s)?\s*(\d{1,2})", msg)
+        sample_match = re.search(r"(?:sample|mẫu)\s*(?:#|\s)?\s*(\d{1,2})", msg)
         if sample_match:
             found_sample = get_sample_info(sample_match.group(1))
         else:
@@ -164,8 +319,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
                     found_sample = s
                     break
     else:
-        # Route intent but explicit sample number present (e.g. "route to sample #25")
-        sample_match = re.search(r"sample\s*(?:#|\s)?\s*(\d{1,2})", msg)
+        sample_match = re.search(r"(?:sample|mẫu)\s*(?:#|\s)?\s*(\d{1,2})", msg)
         if sample_match:
             found_sample = get_sample_info(sample_match.group(1))
 
@@ -185,11 +339,8 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         )
         return ChatResponse(reply=reply, action=action, tools_called=["get_sample_info"])
 
-    # 3. Route planning inquiry check
+    # 6. Route planning inquiry check
     if is_route_intent:
-        loc = request.current_location if isinstance(request.current_location, dict) else {}
-        cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else 77.4509
-        cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else 18.4446
         cur = {"lon": cur_lon, "lat": cur_lat}
         dest_lon, dest_lat = 77.4060, 18.4588  # Default: Delta Front
         dest_name = "Delta Front"
@@ -208,7 +359,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
                     dest_name = lm["name"]
                     break
 
-        route_data = plan_route(cur.get("lon", 77.4509), cur.get("lat", 18.4446), dest_lon, dest_lat)
+        route_data = plan_route(cur_lon, cur_lat, dest_lon, dest_lat)
         action = CopilotAction(
             action_type="PLAN_ROUTE",
             payload={
@@ -226,46 +377,32 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         )
         return ChatResponse(reply=reply, action=action, tools_called=["plan_route"])
 
-    # 4. Terrain inspection inquiry check
-    if any(k in msg for k in ["terrain", "slope", "hazard", "roughness", "inspect", "elevation", "grade"]):
-        loc = request.current_location if isinstance(request.current_location, dict) else {}
-        cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else 77.4509
-        cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else 18.4446
-
-        # Check if coordinates were supplied in message text
-        coord_match = re.search(r"(\d{2}\.\d+)\s*,\s*(\d{2}\.\d+)", msg)
-        if coord_match:
-            c1, c2 = float(coord_match.group(1)), float(coord_match.group(2))
-            if 70.0 <= c1 <= 80.0 and 15.0 <= c2 <= 22.0:
-                cur_lon, cur_lat = c1, c2
-            elif 70.0 <= c2 <= 80.0 and 15.0 <= c1 <= 22.0:
-                cur_lon, cur_lat = c2, c1
-
+    # 7. Terrain inspection inquiry check
+    if any(k in msg for k in ["terrain", "slope", "hazard", "roughness", "inspect", "elevation", "grade", "địa hình", "độ dốc", "hiểm họa", "độ gồ ghề"]):
         cur = {"lon": cur_lon, "lat": cur_lat}
-        t_data = inspect_terrain(cur.get("lon", 77.4509), cur.get("lat", 18.4446))
+        t_data = inspect_terrain(cur_lon, cur_lat)
         action = CopilotAction(
             action_type="INSPECT_TERRAIN",
-            payload={"lon": cur.get("lon", 77.4509), "lat": cur.get("lat", 18.4446), **t_data},
-            description=f"Inspecting terrain at [{cur.get('lon', 77.4509):.4f}, {cur.get('lat', 18.4446):.4f}]"
+            payload={"lon": cur_lon, "lat": cur_lat, **t_data},
+            description=f"Inspecting terrain at [{cur_lon:.4f}, {cur_lat:.4f}]"
         )
         reply = (
-            f"Capcom terrain telemetry check at [{cur.get('lon', 77.4509):.4f}°E, {cur.get('lat', 18.4446):.4f}°N]: "
+            f"Capcom terrain telemetry check at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
             f"Elevation: {t_data.get('elevation_m')}m, Slope: {t_data.get('slope_deg')}°, "
             f"Roughness: {t_data.get('roughness_m')}m, Hazard Index: {t_data.get('hazard')}/100 "
             f"(Safe operational envelope: <30.0° slope limit). Telemetry pinned to HUD."
         )
         return ChatResponse(reply=reply, action=action, tools_called=["inspect_terrain"])
 
-    # 5. General mission overview
+    # 8. General mission overview
     return ChatResponse(
-        reply="Odyssey Capcom standing by. Ready to assist with terrain inspection, route planning, or sample data within Jezero Crater. State your destination or waypoint.",
+        reply="Odyssey Capcom standing by. Ready to assist with terrain inspection, route planning, MEDA weather telemetry, space radiation, or sample science within Jezero Crater. State your destination or waypoint.",
         action=None,
         tools_called=[]
     )
 
 
 @router.post("/chat", response_model=ChatResponse)
-@router.post("/api/copilot/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """Chat endpoint executing the 2-pass Gemini tool loop or offline fallback."""
     # Pre-check: Strict zero-hallucination vitals refusal
@@ -285,11 +422,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=turn.get("content", ""))]))
 
     user_prompt = request.message
-    if request.current_location:
-        loc = request.current_location if isinstance(request.current_location, dict) else {}
-        cur_lon = loc.get("lon", 77.4509) if loc.get("lon") is not None else 77.4509
-        cur_lat = loc.get("lat", 18.4446) if loc.get("lat") is not None else 18.4446
-        user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{user_prompt}"
+    loc = request.current_location if isinstance(request.current_location, dict) else {}
+    cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else (float(loc.get("x")) if loc.get("x") is not None else 77.4509)
+    cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else (float(loc.get("y")) if loc.get("y") is not None else 18.4446)
+    user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{user_prompt}"
 
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]))
     gemini_tools = [build_gemini_tools()]
@@ -319,8 +455,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         tool_result: Dict[str, Any] = {}
 
         if func_name == "inspect_terrain":
-            lon = float(func_args.get("lon", 77.4509))
-            lat = float(func_args.get("lat", 18.4446))
+            lon = float(func_args.get("lon", cur_lon))
+            lat = float(func_args.get("lat", cur_lat))
             tool_result = inspect_terrain(lon, lat)
             action = CopilotAction(
                 action_type="INSPECT_TERRAIN",
@@ -328,8 +464,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 description=f"Inspect terrain at [{lon:.4f}, {lat:.4f}]"
             )
         elif func_name == "plan_route":
-            s_lon = float(func_args.get("start_lon", 77.4509))
-            s_lat = float(func_args.get("start_lat", 18.4446))
+            s_lon = float(func_args.get("start_lon", cur_lon))
+            s_lat = float(func_args.get("start_lat", cur_lat))
             e_lon = float(func_args.get("end_lon", 77.4060))
             e_lat = float(func_args.get("end_lat", 18.4588))
             tool_result = plan_route(s_lon, s_lat, e_lon, e_lat)
@@ -345,6 +481,30 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 action_type="FOCUS_SAMPLE",
                 payload=tool_result,
                 description=f"Focus on sample #{tool_result.get('sample_no', 'N/A')}: {tool_result.get('name', 'N/A')}"
+            )
+        elif func_name == "get_weather_and_climate":
+            sol = func_args.get("sol")
+            tool_result = get_weather_and_climate(sol=int(sol) if sol is not None else None)
+            action = CopilotAction(
+                action_type="SHOW_WEATHER",
+                payload=tool_result,
+                description=f"Perseverance MEDA weather telemetry for Sol {tool_result.get('sol', 'latest')}"
+            )
+        elif func_name == "get_space_weather_and_radiation":
+            tool_result = get_space_weather_and_radiation()
+            action = CopilotAction(
+                action_type="SHOW_SPACE_WEATHER",
+                payload=tool_result,
+                description="Space weather telemetry: DONKI solar events and crustal magnetic field"
+            )
+        elif func_name == "get_geology_context":
+            lon = float(func_args.get("lon", cur_lon))
+            lat = float(func_args.get("lat", cur_lat))
+            tool_result = get_geology_context(lon=lon, lat=lat)
+            action = CopilotAction(
+                action_type="TOGGLE_LAYER",
+                payload={"layer": "geologic_units", "unit": tool_result.get("unit_id"), "lon": lon, "lat": lat, **tool_result},
+                description=f"Geological formation at [{lon:.4f}, {lat:.4f}]: {tool_result.get('unit_id', 'Unknown')}"
             )
         else:
             tool_result = {"error": f"Unknown tool: {func_name}"}
@@ -372,5 +532,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         return ChatResponse(reply=reply_text, action=action, tools_called=tools_called)
 
-    # No tools invoked: direct textual answer
+    # No tools invoked: if direct action query was expected, check offline fallback
+    fallback_res = execute_offline_fallback(request)
+    if fallback_res.action is not None:
+        return fallback_res
+
+    # Direct textual answer
     return ChatResponse(reply=response.text or "Roger, Capcom standing by.", action=None, tools_called=[])

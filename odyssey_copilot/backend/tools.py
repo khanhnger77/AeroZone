@@ -1,7 +1,9 @@
 """Tool definitions and dual-mode execution for Odyssey Copilot."""
 from __future__ import annotations
+import json
 import math
 import os
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 import requests
 
@@ -594,7 +596,494 @@ def plan_route(start_lon: float, start_lat: float, end_lon: float, end_lat: floa
     }
 
 
+# ---------------------------------------------------------------------------
+# Data Platform Ingestion & Spatial Query Helpers
+# ---------------------------------------------------------------------------
+REPO_ROOT = Path(os.environ.get("MARS_ODYSSEY_ROOT", Path(__file__).resolve().parents[2]))
+
+
+def _resolve_data_path(rel_path: str) -> Path:
+    """Resolve data paths relative to repository root with multiple fallbacks."""
+    candidates = [
+        REPO_ROOT / rel_path,
+        Path.cwd() / rel_path,
+        Path(__file__).resolve().parents[2] / rel_path,
+        Path(__file__).resolve().parents[3] / rel_path,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return REPO_ROOT / rel_path
+
+
+_MEDA_CACHE: Optional[Dict[str, Any]] = None
+_DUST_CACHE: Optional[Dict[str, Any]] = None
+_DONKI_CACHE: Optional[Dict[str, Any]] = None
+_CRUSTAL_CACHE: Optional[Dict[str, Any]] = None
+_GEOLOGY_GEOJSON_CACHE: Optional[Dict[str, Any]] = None
+_GEOLOGY_LEGEND_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _load_meda_data() -> Dict[str, Any]:
+    global _MEDA_CACHE
+    if _MEDA_CACHE is None:
+        p = _resolve_data_path("frontend/public/data/climate/meda_sols.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _MEDA_CACHE = json.load(f)
+        else:
+            _MEDA_CACHE = {"sols": []}
+    return _MEDA_CACHE
+
+
+def _load_dust_stats() -> Dict[str, Any]:
+    global _DUST_CACHE
+    if _DUST_CACHE is None:
+        p = _resolve_data_path("frontend/public/data/climate/dust_storm_stats.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _DUST_CACHE = json.load(f)
+        else:
+            _DUST_CACHE = {"by_ls_bin": []}
+    return _DUST_CACHE
+
+
+def _load_donki_data() -> Dict[str, Any]:
+    global _DONKI_CACHE
+    if _DONKI_CACHE is None:
+        p = _resolve_data_path("frontend/public/data/space_weather/donki_mars.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _DONKI_CACHE = json.load(f)
+        else:
+            _DONKI_CACHE = {"events": []}
+    return _DONKI_CACHE
+
+
+def _load_crustal_data() -> Dict[str, Any]:
+    global _CRUSTAL_CACHE
+    if _CRUSTAL_CACHE is None:
+        p = _resolve_data_path("frontend/public/data/space_weather/crustal_field.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _CRUSTAL_CACHE = json.load(f)
+        else:
+            _CRUSTAL_CACHE = {}
+    return _CRUSTAL_CACHE
+
+
+def _load_geology_geojson() -> Dict[str, Any]:
+    global _GEOLOGY_GEOJSON_CACHE
+    if _GEOLOGY_GEOJSON_CACHE is None:
+        p = _resolve_data_path("frontend/public/data/geology/geologic_units.geojson")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _GEOLOGY_GEOJSON_CACHE = json.load(f)
+        else:
+            _GEOLOGY_GEOJSON_CACHE = {"features": []}
+    return _GEOLOGY_GEOJSON_CACHE
+
+
+def _load_geology_legend() -> Dict[str, Any]:
+    global _GEOLOGY_LEGEND_CACHE
+    if _GEOLOGY_LEGEND_CACHE is None:
+        p = _resolve_data_path("data/metadata/geology_legend.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                _GEOLOGY_LEGEND_CACHE = json.load(f)
+        else:
+            _GEOLOGY_LEGEND_CACHE = {}
+    return _GEOLOGY_LEGEND_CACHE
+
+
+# ---------------------------------------------------------------------------
+# Pure Python Ray-Casting Point-in-Polygon Helpers (No Shapely Dependency)
+# ---------------------------------------------------------------------------
+def point_in_poly(x: float, y: float, poly: List[List[float]]) -> bool:
+    """Standard ray-casting algorithm for a single polygon ring."""
+    n = len(poly)
+    if n < 3:
+        return False
+    inside = False
+    p1x, p1y = poly[0]
+    for i in range(1, n + 1):
+        p2x, p2y = poly[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
+
+
+def point_in_geometry(x: float, y: float, geom: Dict[str, Any]) -> bool:
+    """Ray-casting point-in-geometry supporting Polygon and MultiPolygon with holes."""
+    gtype = geom.get("type")
+    coords = geom.get("coordinates", [])
+    if gtype == "Polygon":
+        if not coords:
+            return False
+        if point_in_poly(x, y, coords[0]):
+            for hole in coords[1:]:
+                if point_in_poly(x, y, hole):
+                    return False
+            return True
+        return False
+    elif gtype == "MultiPolygon":
+        for poly in coords:
+            if not poly:
+                continue
+            if point_in_poly(x, y, poly[0]):
+                in_hole = False
+                for hole in poly[1:]:
+                    if point_in_poly(x, y, hole):
+                        in_hole = True
+                        break
+                if not in_hole:
+                    return True
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Geological Metadata and Trafficability Classifications
+# ---------------------------------------------------------------------------
+GEOLOGY_GROUP_METADATA: Dict[str, Dict[str, Any]] = {
+    "bedrock_smooth": {
+        "trafficability": "EXCELLENT",
+        "thermal_inertia": {
+            "rating": "High (>=400 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Cohesive basaltic bedrock, low dust mantle, stable traction"
+        },
+        "formation_interpretation": "Máaz formation: Crater floor volcanic flow unit overlying impact breccia. Excellent rover mobility."
+    },
+    "regolith_fines": {
+        "trafficability": "GOOD",
+        "thermal_inertia": {
+            "rating": "Moderate-High (300-400 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Consolidated regolith and fine grain soil, moderate wheel sinkage"
+        },
+        "formation_interpretation": "Regolith cover unit: Weathered basaltic fines with low-to-moderate sinkage risk."
+    },
+    "delta_layered": {
+        "trafficability": "MODERATE",
+        "thermal_inertia": {
+            "rating": "Moderate (250-350 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Layered sedimentary mudstones/sandstones, terraced slopes"
+        },
+        "formation_interpretation": "Delta Fan formation (Shenandoah / Hawksbill Gap): Ancient lacustrine delta deposits, high astrobiological interest."
+    },
+    "fractured_rough": {
+        "trafficability": "CHALLENGING",
+        "thermal_inertia": {
+            "rating": "Moderate-High (320-420 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Fractured crater floor / Séítah olivine cumulate with rock fragments and surface roughness"
+        },
+        "formation_interpretation": "Séítah formation: Olivine cumulate igneous bedrock, rough jagged surfaces requiring low wheel speeds."
+    },
+    "aeolian_bedforms": {
+        "trafficability": "HAZARDOUS",
+        "thermal_inertia": {
+            "rating": "Low (<250 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Unconsolidated active sand ripples and megaripples, severe wheel entrapment risk"
+        },
+        "formation_interpretation": "Active transverse aeolian bedforms (TARs): High slip risk, avoid direct crossing."
+    },
+    "blocky_talus": {
+        "trafficability": "IMPASSABLE_RESTRICTED",
+        "thermal_inertia": {
+            "rating": "Variable / High boulder fraction (>450 J m^-2 K^-1 s^-1/2)",
+            "surface_character": "Steep scree slopes, meter-scale boulder fields, high roll-over hazard"
+        },
+        "formation_interpretation": "Crater rim and scarp talus: Severe slope collapse and rock hazard, NO-GO for direct traverse."
+    }
+}
+
+
+# ---------------------------------------------------------------------------
+# Deep Data Platform Tools
+# ---------------------------------------------------------------------------
+def get_weather_and_climate(sol: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Ingest Perseverance MEDA weather records and MDAD dust storm statistics.
+    Returns diurnal temperature (K and °C), surface pressure (Pa), humidity,
+    wind telemetry, and regional dust storm probability across solar longitude (Ls) bins.
+    """
+    meda_data = _load_meda_data()
+    dust_stats = _load_dust_stats()
+    sols = meda_data.get("sols", [])
+
+    if not sols:
+        # Fallback if dataset unavailable
+        return {
+            "sol": sol or 1783,
+            "is_latest": True,
+            "t_air_mean_k": 220.32,
+            "t_air_min_k": 197.04,
+            "t_air_max_k": 258.45,
+            "t_air_mean_c": -52.83,
+            "t_air_min_c": -76.11,
+            "t_air_max_c": -14.7,
+            "p_mean_pa": 738.55,
+            "rh_mean_pct": 5.071,
+            "wind_mean_m_s": None,
+            "atmosphere_composition": "95.3% CO2, 2.6% N2, 1.9% Ar, 0.16% O2",
+            "dust_storm_seasonality": {
+                "total_storms_1500km": 188,
+                "peak_risk_seasons": "Ls 180°-240° (southern spring/summer) & Ls 300°-360°",
+                "risk_level": "MODERATE_ELEVATED"
+            },
+            "summary": "Sol 1783 MEDA: Mean temp -52.8°C (197.0K to 258.5K), pressure 738.6 Pa (0.73% bar). Peak dust storm season at Ls 180-240°."
+        }
+
+    is_nearest = False
+    if sol is None:
+        target = sols[-1]
+        is_latest = True
+    else:
+        # Find exact sol match
+        matched = [s for s in sols if s.get("sol") == sol]
+        if matched:
+            target = matched[0]
+            is_latest = (target.get("sol") == sols[-1].get("sol"))
+        else:
+            # Nearest sol match
+            target = min(sols, key=lambda s: abs(s.get("sol", 0) - sol))
+            is_latest = False
+            is_nearest = True
+
+    target_sol = target.get("sol")
+    t_mean_k = target.get("t_air_mean_k")
+    t_min_k = target.get("t_air_min_k")
+    t_max_k = target.get("t_air_max_k")
+
+    t_mean_c = round(t_mean_k - 273.15, 2) if t_mean_k is not None else None
+    t_min_c = round(t_min_k - 273.15, 2) if t_min_k is not None else None
+    t_max_c = round(t_max_k - 273.15, 2) if t_max_k is not None else None
+
+    p_mean_pa = target.get("p_mean_pa")
+    rh_mean_pct = target.get("rh_mean_pct")
+    wind_mean_m_s = target.get("wind_mean_m_s")
+    n_samples = target.get("n_samples")
+
+    # Dust storm statistics
+    total_storms = 188
+    by_ls = dust_stats.get("by_ls_bin", [])
+    if by_ls:
+        total_storms = sum(b.get("count", 0) for b in by_ls)
+
+    summary_note = f"Sol {target_sol} MEDA"
+    if is_nearest and sol is not None:
+        summary_note += f" (nearest recorded for requested Sol {sol})"
+    summary = (
+        f"{summary_note}: Mean temp {t_mean_c}°C ({t_min_k}K to {t_max_k}K), "
+        f"pressure {p_mean_pa} Pa (0.73% bar). Peak dust storm season at Ls 180-240°."
+    )
+
+    res: Dict[str, Any] = {
+        "sol": target_sol,
+        "is_latest": is_latest,
+        "t_air_mean_k": t_mean_k,
+        "t_air_min_k": t_min_k,
+        "t_air_max_k": t_max_k,
+        "t_air_mean_c": t_mean_c,
+        "t_air_min_c": t_min_c,
+        "t_air_max_c": t_max_c,
+        "p_mean_pa": p_mean_pa,
+        "rh_mean_pct": rh_mean_pct,
+        "wind_mean_m_s": wind_mean_m_s,
+        "n_samples": n_samples,
+        "atmosphere_composition": "95.3% CO2, 2.6% N2, 1.9% Ar, 0.16% O2",
+        "dust_storm_seasonality": {
+            "total_storms_1500km": total_storms,
+            "peak_risk_seasons": "Ls 180°-240° (southern spring/summer) & Ls 300°-360°",
+            "risk_level": "MODERATE_ELEVATED"
+        },
+        "summary": summary
+    }
+    if is_nearest and sol is not None:
+        res["requested_sol"] = sol
+        res["is_nearest"] = True
+
+    return res
+
+
+def get_space_weather_and_radiation() -> Dict[str, Any]:
+    """
+    Ingest NASA DONKI space weather events and Langlais 2019 crustal magnetic field data.
+    Returns surface and orbital B-field intensity at Jezero, shielding assessment,
+    and recent CME/SEP solar event telemetry.
+    """
+    crustal = _load_crustal_data()
+    donki = _load_donki_data()
+
+    # Crustal field data
+    aoi_b = crustal.get("aoi_b_nT", {})
+    jezero_surface_b_nT = aoi_b.get("mean", 86.32)
+    by_alt = crustal.get("by_altitude", [])
+    jezero_altitude_200km_b_nT = 5.5
+    for item in by_alt:
+        if abs(item.get("altitude_km", 0.0) - 200.0) < 1.0:
+            jezero_altitude_200km_b_nT = item.get("aoi_b_nT", {}).get("mean", 5.5)
+
+    global_max_nT = crustal.get("global_max_nT", 10682.1)
+    model = crustal.get("model", "Langlais et al. 2019")
+    shielding_assessment = (
+        "Negligible. Surface field (86.3 nT) is ~500x weaker than Earth's (~50,000 nT); "
+        "offers zero deflection against GCR and solar energetic protons."
+    )
+
+    # DONKI space weather events
+    events = donki.get("events", [])
+    total_events = len(events)
+    cme_count = sum(1 for e in events if e.get("type") == "CME")
+    sep_count = sum(1 for e in events if e.get("type") == "SEP")
+    flr_count = sum(1 for e in events if e.get("type") == "FLR")
+    ips_count = sum(1 for e in events if e.get("type") == "IPS")
+
+    latest_cme = None
+    for e in reversed(events):
+        if e.get("type") == "CME":
+            latest_cme = e
+            break
+    if latest_cme is None and events:
+        latest_cme = events[-1]
+
+    return {
+        "magnetic_field": {
+            "model": model,
+            "jezero_surface_b_nT": jezero_surface_b_nT,
+            "jezero_altitude_200km_b_nT": jezero_altitude_200km_b_nT,
+            "global_max_nT": global_max_nT,
+            "shielding_assessment": shielding_assessment
+        },
+        "space_weather": {
+            "total_recorded_events": total_events,
+            "cme_count": cme_count,
+            "sep_count": sep_count,
+            "flr_count": flr_count,
+            "ips_count": ips_count,
+            "latest_cme": latest_cme
+        },
+        "radiation_risk_level": "ELEVATED",
+        "operational_guidance": (
+            "GCR dose rate ~0.6-0.7 mSv/day. In case of active solar energetic particle arrival, "
+            "restrict EVA duration and utilize regolith or terrain shielding."
+        )
+    }
+
+
+def get_geology_context(lon: float, lat: float) -> Dict[str, Any]:
+    """
+    Query Stack et al. 2020 geological unit polygons and THEMIS thermal inertia
+    trafficability ratings for coordinates within the Jezero Crater AOI.
+    """
+    # Jezero Crater AOI bounds: Lon [77.29, 77.47], Lat [18.42, 18.505]
+    if lon < 77.25 or lon > 77.50 or lat < 18.40 or lat > 18.52:
+        return {
+            "lon": lon,
+            "lat": lat,
+            "inside_aoi": False,
+            "error": "Coordinates outside Jezero Crater AOI (Lon [77.29°E, 77.47°E], Lat [18.42°N, 18.505°N])"
+        }
+
+    geojson_data = _load_geology_geojson()
+    legend_data = _load_geology_legend()
+    features = geojson_data.get("features", [])
+
+    matched_feat = None
+    for feat in features:
+        geom = feat.get("geometry", {})
+        if point_in_geometry(lon, lat, geom):
+            matched_feat = feat
+            break
+
+    # If coordinate is within AOI buffer but slightly outside specific polygons (e.g. boundary seam),
+    # find closest feature by approximate centroid
+    is_nearest_match = False
+    if matched_feat is None and features:
+        is_nearest_match = True
+        best_d2 = float("inf")
+        for feat in features:
+            geom = feat.get("geometry", {})
+            gcoords = geom.get("coordinates", [])
+            if geom.get("type") == "Polygon" and gcoords and gcoords[0]:
+                pt = gcoords[0][0]
+            elif geom.get("type") == "MultiPolygon" and gcoords and gcoords[0] and gcoords[0][0]:
+                pt = gcoords[0][0][0]
+            else:
+                continue
+            d2 = (pt[0] - lon) ** 2 + (pt[1] - lat) ** 2
+            if d2 < best_d2:
+                best_d2 = d2
+                matched_feat = feat
+
+    if matched_feat is None:
+        return {
+            "lon": lon,
+            "lat": lat,
+            "inside_aoi": True,
+            "unit_code": None,
+            "unit_id": "Unknown",
+            "unit_name": "Undifferentiated Martian terrain",
+            "group": "unknown",
+            "risk_score": 50,
+            "trafficability": "UNKNOWN",
+            "thermal_inertia": {
+                "rating": "Unclassified",
+                "surface_character": "Undifferentiated surface"
+            },
+            "formation_interpretation": "Unclassified geological unit in Jezero AOI.",
+            "color": "#6c757d"
+        }
+
+    props = matched_feat.get("properties", {})
+    unit_code = props.get("unit_code")
+    unit_id = props.get("unit_id", "Unknown")
+    unit_name = props.get("unit_name", unit_id)
+    group = props.get("group", "unknown")
+    risk_score = props.get("risk_score", 50)
+
+    # Legend color
+    colors = legend_data.get("group_colors", {})
+    color = colors.get(group, "#6c757d")
+
+    meta = GEOLOGY_GROUP_METADATA.get(group, {
+        "trafficability": "UNKNOWN",
+        "thermal_inertia": {
+            "rating": "Unclassified",
+            "surface_character": "Undifferentiated surface"
+        },
+        "formation_interpretation": f"Unit {unit_id} in Jezero AOI."
+    })
+
+    result: Dict[str, Any] = {
+        "lon": lon,
+        "lat": lat,
+        "inside_aoi": True,
+        "unit_code": unit_code,
+        "unit_id": unit_id,
+        "unit_name": unit_name,
+        "group": group,
+        "risk_score": risk_score,
+        "trafficability": meta["trafficability"],
+        "thermal_inertia": meta["thermal_inertia"],
+        "formation_interpretation": meta["formation_interpretation"],
+        "color": color
+    }
+    if is_nearest_match:
+        result["is_nearest_match"] = True
+
+    return result
+
+
 # Backwards compatibility and aliases
 execute_get_sample_info = get_sample_info
 execute_inspect_terrain = inspect_terrain
 execute_plan_route = plan_route
+execute_get_weather_and_climate = get_weather_and_climate
+execute_get_space_weather_and_radiation = get_space_weather_and_radiation
+execute_get_geology_context = get_geology_context

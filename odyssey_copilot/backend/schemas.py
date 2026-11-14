@@ -29,11 +29,14 @@ class ChatRequest(BaseModel):
 class CopilotAction(BaseModel):
     action_type: str = Field(
         ...,
-        description="Type of map action: 'INSPECT_TERRAIN' | 'PLAN_ROUTE' | 'FOCUS_SAMPLE' | 'NAVIGATE_WAYPOINT'"
+        description=(
+            "Type of map action: 'INSPECT_TERRAIN' | 'PLAN_ROUTE' | 'FOCUS_SAMPLE' | "
+            "'NAVIGATE_WAYPOINT' | 'SHOW_WEATHER' | 'SHOW_SPACE_WEATHER' | 'TOGGLE_LAYER'"
+        )
     )
     payload: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Parameters for the map action (coordinates, sample details, route points)"
+        description="Parameters for the map action (coordinates, sample details, route points, weather, layers)"
     )
     description: str = Field(
         ...,

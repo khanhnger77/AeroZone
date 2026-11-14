@@ -21,6 +21,7 @@ import { useMedia } from './useMedia'
 import { useConnections } from './useConnections'
 import ConnectionStatus from './components/ConnectionStatus'
 import PlaceCard, { type PlaceViewTab, type SelectedPlace } from './components/PlaceCard'
+import OdysseyCopilot, { type CopilotAction } from './components/OdysseyCopilot'
 
 // recharts is only needed once a route exists -> load it on demand (separate chunk)
 const ElevationProfile = lazy(() => import('./components/ElevationProfile'))
@@ -171,6 +172,73 @@ export default function App() {
       setRouteError(err instanceof Error ? err.message : String(err)); setRoute(null)
     } finally { setRouteLoading(false) }
   }, [start, end, mobile, connections.planner, routeLoading, demo, demoLoading])
+
+  const handleCopilotAction = useCallback((action: CopilotAction) => {
+    const { action_type, payload } = action
+    if (action_type === 'PLAN_ROUTE') {
+      const s = payload.start
+        ? { lon: Number(payload.start.lon), lat: Number(payload.start.lat) }
+        : (start ?? { lon: LANDING_SITE.lon, lat: LANDING_SITE.lat })
+      const e = { lon: Number(payload.end.lon), lat: Number(payload.end.lat) }
+      setStart(s)
+      setEnd(e)
+      setRoute(null)
+      setRouteError(null)
+      setTab('mission')
+      setPanelOpen(true)
+      plan(s, e)
+      fly(e.lon, e.lat, 15)
+    } else if (action_type === 'FOCUS_SAMPLE') {
+      const sampleNo = payload.sample_no != null ? Number(payload.sample_no) : null
+      const lon = Number(payload.lon ?? 77.3052)
+      const lat = Number(payload.lat ?? 18.4975)
+      const name = payload.name ? String(payload.name) : (sampleNo ? `Sample #${sampleNo}` : 'Sample')
+      if (sampleNo != null) {
+        setSelectedSample(sampleNo)
+      }
+      setTab('science')
+      setPanelOpen(true)
+      fly(lon, lat, 16)
+      setPlace({ lon, lat, name })
+    } else if (action_type === 'INSPECT_TERRAIN') {
+      const lon = Number(payload.lon ?? cursor?.lon ?? LANDING_SITE.lon)
+      const lat = Number(payload.lat ?? cursor?.lat ?? LANDING_SITE.lat)
+      fly(lon, lat, 16)
+      setPlace({ lon, lat, name: payload.name ? String(payload.name) : 'Terrain Inspection' })
+    } else if (action_type === 'TOGGLE_LAYER') {
+      const layerId = String(payload.layer_id || payload.layer || '').toLowerCase()
+      const desiredState = typeof payload.state === 'boolean' ? payload.state : undefined
+      setLayers((prev) => {
+        if (layerId === 'hirise') {
+          const nextVal = desiredState ?? !prev.trek.hirise
+          return { ...prev, trek: { ...prev.trek, hirise: nextVal } }
+        }
+        if (layerId === 'samples' || layerId === 'traverse' || layerId === 'waypoints') {
+          const key = layerId as 'samples' | 'traverse' | 'waypoints'
+          const nextVal = desiredState ?? !prev[key]
+          return { ...prev, [key]: nextVal }
+        }
+        if (layerId) {
+          const currentOn = !!prev.raster[layerId]?.on
+          const nextVal = desiredState ?? !currentOn
+          return {
+            ...prev,
+            raster: {
+              ...prev.raster,
+              [layerId]: {
+                on: nextVal,
+                opacity: prev.raster[layerId]?.opacity ?? 0.7,
+              },
+            },
+          }
+        }
+        return prev
+      })
+      if (payload.lon != null && payload.lat != null) {
+        fly(Number(payload.lon), Number(payload.lat), 15)
+      }
+    }
+  }, [cursor, fly, plan, setLayers, start])
 
   const selectTab = (t: Tab) => {
     if (t === tab) setPanelOpen((o) => !o)
@@ -403,6 +471,8 @@ export default function App() {
       <div className="absolute bottom-3 left-3 right-3 z-[1000]">
         <StatusBar cursor={cursor} info={info} zoom={zoom} apiOk={apiOk} />
       </div>
+
+      <OdysseyCopilot onAction={handleCopilotAction} currentLocation={cursor ?? start ?? LANDING_SITE} />
 
       {briefing && <Briefing manifest={manifest} nSamples={samples?.features.length ?? 0} onEnter={closeBriefing} />}
     </div>
