@@ -13,9 +13,9 @@ Why this design:
 * **Clearance field, not a binary map.** Hazard cells are kept in world-fixed 0.2 m keys; each scan
   rasterises an 80 m window and takes a distance transform. The rover footprint (2.9 × 2.7 m) is three
   circles along the heading, so a pose is safe when the minimum clearance at the three centres is
-  above the circle radius plus margin. The same field drives Dijkstra costs, goal selection, rejoin
+  above the circle radius plus margin. The same field drives A* costs, goal selection, rejoin
   checks and the per-tick safety check, so all decisions agree.
-* **Supervisor with a watchdog.** Track the route until it is blocked, detour on a Dijkstra path to a
+* **Supervisor with a watchdog.** Track the route until it is blocked, detour on an A* path to a
   clear route point beyond the obstacle, rejoin when the route ahead is clear, back up along the trail
   and penalise the failed path when progress stalls, and only give up (``blocked``) after
   ``max_recoveries`` attempts.
@@ -27,13 +27,17 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy import ndimage
-from skimage.graph import MCP_Geometric
 
 from .geometry import Route, heights, wrap, yaw_of
 
 FAR = 1.0e3            # clearance reported outside the local window / with an empty map
 FLOOR_EXTRA_M = 0.15   # floor = footprint_r + 0.15 = 1.60 m: never accept less than this from a move
 TOLERANCE_M = 0.02
+# Smoothness (M5 internals, not part of the C10 config contract):
+SIDE_SWITCH_COST = 3.0     # extra cost per cell for passing on the other side of the route than the detour chose
+LEAD_IN_M = 1.2            # detours start along the current heading for this far when it is clear
+ACCEL_M_S2 = 0.4           # speed-up ramp while avoiding (braking is never limited)
+YAW_ACCEL_RAD_S2 = 0.6     # max change of the turn-rate command while avoiding
 
 
 # --------------------------------------------------------------------------------------------- keys
@@ -216,6 +220,112 @@ class ObstacleMap:
         return LocalMap(x0, y0, res, clr <= inflate, clr, inflate)
 
 
+# ------------------------------------------------------------------------------------------- A*
+@dataclass
+class AStarResult:
+    path: list | None                 # [(j, i), ...] start → goal, or None
+    reached: tuple | None             # goal cell reached
+    g: dict                           # flat index → cost-so-far of every settled cell
+    parent: dict                      # flat index → flat index of its predecessor
+    ncols: int
+
+    def trace(self, cell) -> list:
+        k = cell[0] * self.ncols + cell[1]
+        out = []
+        while k is not None:
+            out.append(divmod(k, self.ncols))
+            k = self.parent.get(k)
+        return out[::-1]
+
+
+_NB = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+
+def astar(cost: np.ndarray, start: tuple, goal_mask: np.ndarray, res: float) -> AStarResult:
+    """A* on an 8-connected grid to the nearest of several goal cells.
+
+    Edge cost = mean of the two cell costs × step length (m), as in a geometric cost-distance; non-finite
+    cells are impassable. Heuristic = Euclidean distance (m) to the nearest goal, from one distance
+    transform. Every cell costs ≥ 1 per metre, so the heuristic is admissible and consistent: the path is
+    optimal and each cell is settled once. When no goal is reachable the search exhausts the reachable
+    region; ``g`` then holds all of it for the caller's fallback.
+    """
+    import heapq
+
+    ny, nx = cost.shape
+    if not goal_mask.any():
+        return AStarResult(None, None, {}, {}, nx)
+    h = (ndimage.distance_transform_edt(~goal_mask) * res).ravel()
+    c = cost.ravel()
+    goal = goal_mask.ravel()
+    s = start[0] * nx + start[1]
+    g = {s: 0.0}
+    parent: dict = {s: None}
+    closed = set()
+    heap = [(h[s], h[s], s)]                     # (f, h, cell): ties go to the cell nearer the goal
+    steps = [(dj * nx + di, dj, di, res * (1.4142135623730951 if dj and di else 1.0)) for dj, di in _NB]
+    inf = float("inf")
+    while heap:
+        _, _, u = heapq.heappop(heap)
+        if u in closed:
+            continue
+        closed.add(u)
+        if goal[u]:
+            path = []
+            k = u
+            while k is not None:
+                path.append(divmod(k, nx))
+                k = parent[k]
+            return AStarResult(path[::-1], divmod(u, nx), g, parent, nx)
+        uj, ui = divmod(u, nx)
+        gu = g[u]
+        cu = c[u]
+        for off, dj, di, length in steps:
+            vj, vi = uj + dj, ui + di
+            if vj < 0 or vj >= ny or vi < 0 or vi >= nx:
+                continue
+            v = u + off
+            cv = c[v]
+            if cv == inf or v in closed:
+                continue
+            gv = gu + 0.5 * (cu + cv) * length
+            if gv < g.get(v, inf):
+                g[v] = gv
+                parent[v] = u
+                heapq.heappush(heap, (gv + h[v], h[v], v))
+    return AStarResult(None, None, {k: g[k] for k in closed}, parent, nx)
+
+
+def smooth_path(cells: list, cost: np.ndarray) -> list:
+    """Any-angle shortcutting of an 8-connected grid path (string pulling).
+
+    Grid A* has many equal-cost paths and may return "straight, then diagonal at the end", which never
+    converges onto a goal that keeps moving ahead. From each kept cell we jump to the farthest later cell
+    whose straight segment only crosses cells no costlier than the costliest cell it replaces, so a
+    shortcut never brings the rover closer to an obstacle than the grid path did.
+    """
+    if len(cells) <= 2:
+        return cells
+    P = np.asarray(cells, dtype=np.int64)
+    cvals = cost[P[:, 0], P[:, 1]]
+    out = [cells[0]]
+    a = 0
+    n = len(cells)
+    while a < n - 1:
+        b = n - 1
+        while b > a + 1:
+            k = int(max(abs(P[b, 0] - P[a, 0]), abs(P[b, 1] - P[a, 1]))) * 2 + 1
+            jj = np.rint(np.linspace(P[a, 0], P[b, 0], k)).astype(np.int64)
+            ii = np.rint(np.linspace(P[a, 1], P[b, 1], k)).astype(np.int64)
+            seg = cost[jj, ii]
+            if np.isfinite(seg).all() and seg.max() <= cvals[a:b + 1].max() + 1e-9:
+                break
+            b -= 1
+        out.append(cells[b])
+        a = b
+    return out
+
+
 # --------------------------------------------------------------------------------- footprint/arcs
 class ArcPlanner:
     """Footprint model (three circles along the heading), arc prediction and the legacy arc set."""
@@ -298,6 +408,9 @@ class AvoidanceSupervisor:
         self.here = FAR
         self.t = 0.0
         self._events: list[dict] = []
+        self.side = 0                      # +1 / -1: side of the route the current detour passes on
+        self._last_cmd = (0.0, 0.0)        # for the smooth-command limiter
+        self._last_cmd_t: float | None = None
 
     def _set_mode(self, mode: str, detail: str) -> None:
         if mode != self.mode:
@@ -373,6 +486,7 @@ class AvoidanceSupervisor:
     def _enter_avoid(self, pose, nav, why: str) -> None:
         self._set_mode("avoid", why)
         self.detours += 1
+        self.side = 0
         self.penalties = []
         self.attempts = 0
         self.best_prog = -np.inf
@@ -447,6 +561,14 @@ class AvoidanceSupervisor:
             if pen.any():
                 pen = ndimage.distance_transform_edt(~pen) * res2 <= 2.0
                 cost[pen] += 30.0
+        # Side commitment: once a detour passes on one side, switching sides costs extra, so a partly-seen
+        # obstacle does not make the plan (and the rover) wiggle left-right between scans.
+        p0 = route.point(s)
+        hd0 = float(route.heading(s, half=3.0))
+        lat = (-(cxs[None, :] - p0[0]) * np.sin(hd0) + (cys[:, None] - p0[1]) * np.cos(hd0))   # left = +
+        lon = ((cxs[None, :] - p0[0]) * np.cos(hd0) + (cys[:, None] - p0[1]) * np.sin(hd0))
+        if self.side:
+            cost[(lat * self.side < -0.6) & (lon > 0)] += SIDE_SWITCH_COST
         cost[imp] = np.inf
         cost[rj, ri] = 1.0
         gxy, gs = self._goals(route, s)
@@ -454,41 +576,46 @@ class AvoidanceSupervisor:
         gj = ((gxy[:, 1] - lm.y0) // res2).astype(int)
         ok = (gi >= 0) & (gi < n2) & (gj >= 0) & (gj < n2)
         gi, gj, gs, gxy = gi[ok], gj[ok], gs[ok], gxy[ok]
-        fin = np.isfinite(cost[gj, gi]) if len(gi) else np.zeros(0, bool)
         cells = None
         goal_s = None
         remaining_extra = 0.0
-        if fin.any():
-            mcp = MCP_Geometric(cost, fully_connected=True)
-            starts = list(zip(gj[fin].tolist(), gi[fin].tolist()))
-            cum, _ = mcp.find_costs(starts)
-            if np.isfinite(cum[rj, ri]):
-                cells = mcp.traceback((rj, ri))[::-1]
-                end = cells[-1]
-                k = int(np.argmin((gj[fin] - end[0]) ** 2 + (gi[fin] - end[1]) ** 2))
-                goal_s = float(gs[fin][k])
-        if cells is None:
-            # No goal reachable: go to the reachable cell nearest the goals.
-            mcp = MCP_Geometric(cost, fully_connected=True)
-            cum, _ = mcp.find_costs([(rj, ri)])
-            reach = np.isfinite(cum)
-            reach[rj, ri] = False
-            if reach.any() and len(gxy):
-                jj, ii = np.nonzero(reach)
-                px, py = cxs[ii], cys[jj]
-                d = np.hypot(px[:, None] - gxy[None, :, 0], py[:, None] - gxy[None, :, 1])
-                dmin = d.min(axis=1)
-                score = dmin + 0.05 * cum[jj, ii]
-                b = int(np.argmin(score))
-                cells = mcp.traceback((int(jj[b]), int(ii[b])))
-                goal_s = float(gs[int(np.argmin(d[b]))])
-                remaining_extra = float(dmin[b])
+        if len(gi):
+            goal_mask = np.zeros(cost.shape, bool)
+            goal_mask[gj, gi] = True
+            goal_mask &= np.isfinite(cost)
+            res = astar(cost, (rj, ri), goal_mask, res2)
+            if res.reached is not None:
+                cells = res.path
+                end = res.reached
+                k = int(np.argmin((gj - end[0]) ** 2 + (gi - end[1]) ** 2))
+                goal_s = float(gs[k])
+            elif res.g:
+                # No goal reachable: go to the explored cell nearest the goals (dist + 0.05·cost).
+                keys = np.fromiter(res.g.keys(), dtype=np.int64)
+                gvals = np.fromiter(res.g.values(), dtype=np.float64)
+                jj, ii = np.divmod(keys, n2)
+                keep = keys != rj * n2 + ri
+                if keep.any():
+                    jj, ii, gvals = jj[keep], ii[keep], gvals[keep]
+                    d = np.hypot(cxs[ii][:, None] - gxy[None, :, 0], cys[jj][:, None] - gxy[None, :, 1])
+                    dmin = d.min(axis=1)
+                    b = int(np.argmin(dmin + 0.05 * gvals))
+                    cells = res.trace((int(jj[b]), int(ii[b])))
+                    goal_s = float(gs[int(np.argmin(d[b]))])
+                    remaining_extra = float(dmin[b])
         if cells is None or len(cells) < 2:
             self.path = None
             return
-        cells = np.asarray(cells)
+        cells = np.asarray(smooth_path([tuple(cc) for cc in cells], cost))
         xy = np.stack([cxs[cells[:, 1]], cys[cells[:, 0]]], axis=1)
         xy[0] = (x, y)
+        xy = self._round_corners(xy, yaw)
+        xy = Route(xy).point(np.arange(0.0, Route(xy).length + 1e-9, res2)) if len(xy) > 1 else xy  # dense for pursuit
+        cells = xy
+        lat_path = -(xy[:, 0] - p0[0]) * np.sin(hd0) + (xy[:, 1] - p0[1]) * np.cos(hd0)
+        k_far = int(np.argmax(np.abs(lat_path)))
+        if abs(lat_path[k_far]) > 0.8:
+            self.side = int(np.sign(lat_path[k_far]))
         if remaining_extra == 0.0 and goal_s is not None:
             ext = np.arange(goal_s + 1.0, min(goal_s + 10.0, route.length) + 1e-9, 1.0)
             if len(ext):
@@ -501,6 +628,61 @@ class AvoidanceSupervisor:
         if prog >= self.best_prog + 0.5:
             self.best_prog = prog
             self.last_prog_t = self.t
+
+    def _path_clear(self, pts: np.ndarray) -> np.ndarray:
+        """Per-point footprint clearance check along a polyline (heading from the neighbours)."""
+        d = np.gradient(pts, axis=0) if len(pts) > 1 else np.zeros_like(pts)
+        hd = np.arctan2(d[:, 1], d[:, 0])
+        return self._fc(pts, hd) > self.inflate + TOLERANCE_M
+
+    def _round_corners(self, xy: np.ndarray, yaw: float, iters: int = 3) -> np.ndarray:
+        """Chaikin corner cutting with a clearance guard, starting tangent to the rover's heading.
+
+        A corner is cut only if both replacement points keep the full footprint clearance, so rounding
+        never brings the path closer to an obstacle than the safety margin allows.
+        """
+        if len(xy) < 2:
+            return xy
+        # Leave along the current heading when that is clear: the rover curves into the detour
+        # instead of stopping to spin towards the first waypoint.
+        first = xy[1] - xy[0]
+        if np.hypot(*first) > 1.0 and abs(float(wrap(np.arctan2(first[1], first[0]) - yaw))) > np.deg2rad(15):
+            lead = xy[0] + LEAD_IN_M * np.array([np.cos(yaw), np.sin(yaw)])
+            if self._fc(lead[None, :], yaw)[0] > self.inflate + TOLERANCE_M:
+                xy = np.vstack([xy[:1], lead, xy[1:]])
+        for _ in range(iters):
+            if len(xy) < 3:
+                break
+            out = [xy[0]]
+            for i in range(1, len(xy) - 1):
+                a, v, b = xy[i - 1], xy[i], xy[i + 1]
+                cand = np.array([0.25 * a + 0.75 * v, 0.75 * v + 0.25 * b])
+                if self._path_clear(np.vstack([a, cand, b]))[1:3].all():
+                    out.extend(cand)
+                else:
+                    out.append(v)
+            out.append(xy[-1])
+            xy = np.asarray(out)
+        return xy
+
+    def _smooth_cmd(self, raw, x, y, yaw):
+        """Limit acceleration and turn-rate changes while avoiding. Braking and holds are never delayed,
+        and a limited command is used only if it passes the same safety check as the raw one."""
+        v_raw, w_raw = float(raw[0]), float(raw[1])
+        lv, lw = self._last_cmd
+        dt = None if self._last_cmd_t is None else self.t - self._last_cmd_t
+        self._last_cmd_t = self.t
+        if dt is None or dt <= 0 or dt > 0.5 or (v_raw == 0.0 and w_raw == 0.0):
+            self._last_cmd = (v_raw, w_raw)
+            return v_raw, w_raw
+        v = v_raw
+        if np.sign(v_raw) == np.sign(lv) and abs(v_raw) > abs(lv):            # speeding up: ramp
+            v = lv + np.clip(v_raw - lv, -ACCEL_M_S2 * dt, ACCEL_M_S2 * dt)
+        w = lw + float(np.clip(w_raw - lw, -YAW_ACCEL_RAD_S2 * dt, YAW_ACCEL_RAD_S2 * dt))
+        if (v, w) != (v_raw, w_raw) and not self._safe(x, y, yaw, v, w):
+            v, w = v_raw, w_raw
+        self._last_cmd = (float(v), float(w))
+        return float(v), float(w)
 
     def _watchdog(self, x, y) -> None:
         stalled = self.t - self.last_prog_t > float(self.cfg["watchdog_s"])
@@ -565,14 +747,15 @@ class AvoidanceSupervisor:
             v, w = (float(nav_cmd[0]), float(nav_cmd[1]))
             if self.lm.empty or self._safe(x, y, yaw, v, w):
                 self.choice = None
+                self._last_cmd, self._last_cmd_t = (v, w), self.t     # the limiter starts from here
                 return nav_cmd
             self._enter_avoid(pose, nav, "safety stop")
         if self.mode == "blocked":
             self.choice = "hold"
             return 0.0, 0.0
         if self.mode == "recover":
-            return self._reverse_on_trail(x, y, yaw, nav)
-        return self._pursue(x, y, yaw, nav)
+            return self._smooth_cmd(self._reverse_on_trail(x, y, yaw, nav), x, y, yaw)
+        return self._smooth_cmd(self._pursue(x, y, yaw, nav), x, y, yaw)
 
     def _pursue(self, x, y, yaw, nav):
         if self.path is None or len(self.path) < 2:
