@@ -192,6 +192,8 @@ class SimServer:
                 "wheel_radius_m": d["wheel_radius_m"],
                 "wheel_positions_m": d["wheel_positions_m"],
             },
+            # Additive (proposed C5 extension): the on-foot "astronaut" model, when available.
+            "astronaut": self.router.astronaut.describe() if self.router.astronaut is not None else None,
             "controls": {
                 "speeds_m_s": lim["demo_speeds_m_s"],
                 "real_max_speed_m_s": lim["real_max_speed_m_s"],
