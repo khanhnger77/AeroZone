@@ -48,14 +48,14 @@ export default function StatusBar({ cursor, info, zoom, apiOk }: { cursor: LonLa
           </div>
         </>
       ) : (
-        <span className="text-faint">{cursor ? 'outside analysed terrain' : 'hover the map for terrain telemetry'}</span>
+        <span className="text-faint">{apiOk === false ? 'terrain readout unavailable · planner offline' : apiOk === null ? 'connecting to planner…' : cursor ? 'outside analysed terrain' : 'hover for terrain · click for 3D / 360°'}</span>
       )}
       <div className="ml-auto flex items-center gap-5 text-muted">
         <ScaleBar zoom={zoom} />
         <span>Z{zoom}</span>
         <span className="flex items-center gap-1.5">
           <i className={`h-1.5 w-1.5 rounded-full ${apiOk ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : apiOk === false ? 'bg-red-500' : 'bg-amber-400'}`} />
-          {apiOk ? 'LINK' : apiOk === false ? 'NO LINK' : '…'}
+          {apiOk ? 'Planner online' : apiOk === false ? 'Planner offline' : 'Checking…'}
         </span>
         <span className="hidden text-faint 2xl:inline">IAU Mars 2000 · planetocentric · E+</span>
       </div>

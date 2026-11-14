@@ -1,0 +1,29 @@
+[
+  {
+    "id": "butler-landing",
+    "url": "https://mastcamz.asu.edu/wp-content/uploads/2026/01/Mastcam-Z_360_Butler_Landing_1_Sols03-11_R0_natural_10x-2048x569.jpg",
+    "bytes": 283523,
+    "sha256": "72e5863f84729bd09b535e7dd4a583bc6623b7696046fa2575cb059f300e2e54",
+    "credit": "NASA/JPL-Caltech/ASU/MSSS",
+    "source": "https://mastcamz.asu.edu/mastcam-zs-360-panorama-collection/",
+    "retrieved_utc": "2026-11-14T04:17:52+00:00"
+  },
+  {
+    "id": "van-zyl",
+    "url": "https://mastcamz.asu.edu/wp-content/uploads/2025/04/Mastcam-Z_360_Van_Zyl_Sols53-64_L0_natural_10x-2048x438.jpg",
+    "bytes": 152455,
+    "sha256": "b564b1e747c12a64b8a321c6a0c36c2f6b3cbf1931e2758e2e8339e13e02a958",
+    "credit": "NASA/JPL-Caltech/ASU/MSSS",
+    "source": "https://mastcamz.asu.edu/mastcam-zs-360-panorama-collection/",
+    "retrieved_utc": "2026-11-14T04:17:52+00:00"
+  },
+  {
+    "id": "bright-angel",
+    "url": "https://mastcamz.asu.edu/wp-content/uploads/2024/08/Mastcam-Z_360_Bright_Angel_Z63_Sol1178_L0_natural_10x-2048x501.jpg",
+    "bytes": 219827,
+    "sha256": "48e2e4abcd5218dee9fd505fd8feeaa10a09826cff3ae027f363e8c95eb2c04b",
+    "credit": "NASA/JPL-Caltech/ASU/MSSS",
+    "source": "https://mastcamz.asu.edu/mastcam-zs-360-panorama-collection/",
+    "retrieved_utc": "2026-11-14T04:17:52+00:00"
+  }
+]

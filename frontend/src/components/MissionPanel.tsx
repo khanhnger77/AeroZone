@@ -1,9 +1,14 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { ArrowRight, Route as RouteIcon } from 'lucide-react'
+import type { ConnectionState } from '../useConnections'
 import type { LonLat, RouteResponse } from '../types'
 import { fmtDist, fmtLat, fmtLon } from '../map/geo'
 import { Section, PanelHeader } from './ui'
+import RouteComparison from './RouteComparison'
 
 interface Props {
+  plannerState: ConnectionState
+  simState: ConnectionState
   demoActive: boolean
   demoLoading: boolean
   obstaclesOn: boolean
@@ -25,17 +30,47 @@ interface Props {
   onSelect: (id: string) => void
 }
 
-const CLASS_COLORS: Record<string, string> = {
-  Low: '#91cf60', Moderate: '#fee08b', Elevated: '#fc8d59', High: '#d73027', Severe: '#7b0041',
-}
-
 export default function MissionPanel(p: Props) {
+  const comparison = useRef<HTMLDivElement>(null)
+  const previousRoute = useRef(p.route)
+  useEffect(() => {
+    if (p.route && p.route !== previousRoute.current) {
+      comparison.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    }
+    previousRoute.current = p.route
+  }, [p.route])
+  const locked = p.demoActive || p.demoLoading
+  const plannerReason = p.plannerState === 'checking' ? 'Checking the planner connection…'
+    : p.plannerState === 'offline' ? 'Planner is offline. Retry the connection in the header; map layers are still available.' : null
+  const planReason = locked ? 'Exit the 3D demo to change or compute a route.'
+    : p.loading ? 'Calculating your route alternatives…'
+    : plannerReason ?? (!p.start || !p.end ? 'Pick both a start and a target, or try the sample route above.' : null)
+  const sampleReason = locked ? 'Exit the 3D demo to try another route.' : p.loading ? 'Calculating routes…' : plannerReason
+  const demoReason = p.demoActive ? null : p.demoLoading ? 'Preparing the 3D scene…'
+    : p.simState === 'checking' ? 'Checking the 3D connection…'
+    : p.simState === 'offline' ? 'Rover simulation is unavailable. Click the map for Terrain 3D and panorama views.'
+    : p.loading ? 'Wait for route calculation to finish.'
+    : !p.route ? 'Compute a route before starting the 3D demo.' : null
   const pt = (v: LonLat | null) => (v ? `${fmtLat(v.lat)} ${fmtLon(v.lon)}` : 'not set')
   const sel = p.route?.routes.find((r) => r.id === (p.selected ?? p.route?.recommended))
   return (
     <div>
-      <PanelHeader kicker="Mission planner" title="Plan an EVA" subtitle="Set a start and a target. Three cost profiles trade distance against modelled hazard and slope effort." />
-      <Section title="1 · Waypoints">
+      <PanelHeader kicker="Mission planner" title="Plan an EVA" subtitle="Choose where to explore. Compare routes by distance, terrain hazard and slope." />
+      <Section title="Start here">
+        <div className="rounded-xl border border-mars/25 bg-gradient-to-br from-mars/10 to-transparent p-3">
+          <div className="mb-1 flex items-center gap-2 text-sm font-semibold"><RouteIcon size={16} className="text-mars" />Your first Mars route</div>
+          <p className="mb-3 text-xs leading-relaxed text-muted">Explore the journey from the landing site to Cheyava Falls. We’ll set both points and calculate three alternatives for you.</p>
+          <button type="button" aria-label="Try sample route" aria-describedby={sampleReason ? 'sample-route-help' : undefined} disabled={!!sampleReason} onClick={p.onPreset} className="btn-primary w-full justify-between">
+            {p.loading ? 'Calculating routes…' : 'Try sample route'}<ArrowRight size={15} aria-hidden="true" />
+          </button>
+          {sampleReason && <p id="sample-route-help" role="status" className="mt-2 text-[11px] leading-relaxed text-muted">{sampleReason}</p>}
+          {p.route && <button type="button" onClick={() => comparison.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })} className="mt-2 flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs text-cyan hover:bg-cyan/5">View route comparison<ArrowRight size={13} aria-hidden="true" /></button>}
+        </div>
+        <ol aria-label="Planning steps" className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-muted">
+          {['Choose points', 'Compute routes', 'Compare & explore'].map((label, i) => <li key={label} className="flex items-start gap-1.5"><span className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-line-2 font-mono text-cyan">{i + 1}</span><span>{label}</span></li>)}
+        </ol>
+      </Section>
+      <Section title="1 · Choose your own points">
         {(['start', 'end'] as const).map((k) => (
           <div key={k} className="mb-2 flex items-center gap-2">
             <span className={`h-3 w-3 rounded-full ${k === 'start' ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -50,60 +85,26 @@ export default function MissionPanel(p: Props) {
           </div>
         ))}
         <div className="mt-2 flex gap-2">
-          <button disabled={!p.start || !p.end || p.loading || p.demoActive || p.demoLoading} onClick={p.onPlan}
+          <button aria-describedby={planReason ? 'compute-route-help' : undefined} disabled={!!planReason} onClick={p.onPlan}
             className="btn-primary flex-1">
             {p.loading ? 'Computing routes…' : 'Compute routes'}
           </button>
           <button disabled={p.demoActive || p.demoLoading} onClick={p.onReset} className="btn-ghost">Reset</button>
         </div>
-        <label className="mt-3 flex items-center justify-between gap-2 text-xs">
-          Randomly generate obstacles
-          <input type="checkbox" role="switch" aria-label="Randomly generate obstacles" checked={p.obstaclesOn} disabled={p.demoActive || p.demoLoading} onChange={e => p.onObstacles(e.target.checked)} />
-        </label>
-        <button aria-label={p.demoActive ? 'Exit 3D demo' : 'Run demo'} disabled={!p.route || p.demoLoading || p.loading} onClick={p.onDemo} className="btn-primary mt-3 w-full shadow-lg shadow-orange-500/20">
-          {p.demoLoading ? 'Loading demo…' : p.demoActive ? 'Exit 3D demo' : 'Run demo'}
-        </button>
-        {p.demoError && <p role="alert" className="mt-2 text-xs text-red-300">{p.demoError}</p>}
-        {p.demoControls}
-        <button disabled={p.demoActive || p.demoLoading} onClick={p.onPreset} className="mt-3 w-full rounded-lg border border-dashed border-cyan/30 bg-cyan/5 px-3 py-2 text-left text-[12px] text-cyan transition-colors hover:bg-cyan/10">
-          ▶ Demo scenario: landing site → Cheyava Falls (sample #25)
-        </button>
-        {p.error && <p className="mt-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">{p.error}</p>}
+        {planReason && <p id="compute-route-help" className="mt-2 text-[11px] leading-relaxed text-muted">{planReason}</p>}
+        {p.error && <p role="alert" className="mt-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">{p.error}</p>}
       </Section>
+
 
       {p.route && (
         <>
+          <div ref={comparison} className="scroll-mt-3" aria-label="Route comparison">
           <Section title="2 · Compare alternatives" right={<span className="text-[10px] text-muted">straight line {fmtDist(p.route.straight_line_m)}</span>}>
-            <div className="space-y-2">
-              {p.route.routes.map((r) => {
-                const isSel = r.id === (p.selected ?? p.route!.recommended)
-                const rec = r.id === p.route!.recommended
-                return (
-                  <button disabled={p.demoActive || p.demoLoading} key={r.id} onClick={() => p.onSelect(r.id)}
-                    className={`w-full rounded-md border p-2.5 text-left transition-colors ${isSel ? 'border-ink/50 bg-panel-2' : 'border-line hover:bg-panel-2'}`}>
-                    <div className="flex items-center gap-2">
-                      <i className="h-1 w-5 rounded" style={{ background: r.color }} />
-                      <span className="text-sm font-medium">{r.label}</span>
-                      {rec && <span className="tag bg-emerald-500/20 text-emerald-300">Recommended</span>}
-                    </div>
-                    <div className="mt-1.5 grid grid-cols-4 gap-1 font-mono text-[11px]">
-                      <span>{fmtDist(r.length_m)}</span>
-                      <span title="distance-weighted mean hazard">hz {r.hazard_mean}</span>
-                      <span title="maximum slope">∠ {r.slope_max_deg}°</span>
-                      <span title="total ascent">↑ {Math.round(r.ascent_m)} m</span>
-                    </div>
-                    <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-sm">
-                      {Object.entries(r.hazard_class_fraction).map(([k, f]) => (
-                        <span key={k} title={`${k} ${(f * 100).toFixed(1)}%`} style={{ width: `${f * 100}%`, background: CLASS_COLORS[k] }} />
-                      ))}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+            <RouteComparison response={p.route} selected={p.selected} disabled={locked || p.loading} onSelect={p.onSelect} />
           </Section>
+          </div>
 
-          <Section title="3 · Why this route">
+          <Section title={`3 · Why ${p.route.routes.find(r => r.id === p.route!.recommended)?.label ?? p.route.recommended} is recommended`}>
             <ul className="list-disc space-y-1 pl-4 text-xs leading-snug">
               {p.route.rationale.map((t, i) => <li key={i}>{t}</li>)}
             </ul>
@@ -133,6 +134,24 @@ export default function MissionPanel(p: Props) {
           )}
         </>
       )}
+
+      <Section title="Rover drive demo" right={<span className={`tag ${p.demoActive || p.simState === 'online' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-panel-2 text-muted'}`}>{p.demoActive ? 'Running' : p.simState === 'online' ? 'Available' : p.simState === 'checking' ? 'Checking' : 'Unavailable'}</span>}>
+        <label className="mt-1 flex items-center justify-between gap-2 text-xs">
+          Randomly generate obstacles
+          <input type="checkbox" role="switch" aria-label="Randomly generate obstacles" checked={p.obstaclesOn} disabled={locked || p.simState !== 'online'} onChange={e => p.onObstacles(e.target.checked)} />
+        </label>
+        <button aria-label={p.demoActive ? 'Exit 3D demo' : 'Run demo'} aria-describedby={demoReason ? 'demo-help' : undefined} disabled={!!demoReason} onClick={p.onDemo} className="btn-primary mt-3 w-full shadow-lg shadow-orange-500/20">
+          {p.demoLoading ? 'Loading demo…' : p.demoActive ? 'Exit 3D demo' : 'Run demo'}
+        </button>
+        {demoReason && <p id="demo-help" role="status" className="mt-2 text-[11px] leading-relaxed text-muted">{demoReason}</p>}
+        {p.demoError && <p role="alert" className="mt-2 text-xs text-red-300">{p.demoError}</p>}
+        {p.demoActive ? p.demoControls : <details className="mt-3 rounded-lg border border-line px-3">
+          <summary className="cursor-pointer py-2 text-xs text-muted">Preview demo controls</summary>
+          <p className="text-[11px] leading-relaxed text-muted">Drive, pause, speed and live telemetry become available after the 3D demo starts.</p>
+          {p.demoControls}
+        </details>}
+      </Section>
+
     </div>
   )
 }

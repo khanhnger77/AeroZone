@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Crosshair, Minus, Plus } from 'lucide-react'
 import MarsMap, { mapRef, ROCK_COLORS, type MapLayerState } from './map/MarsMap'
 import { LANDING_SITE } from './map/geo'
 import { getPoint, loadManifest, loadSamples, loadTraverse, loadWaypoints, planRoute } from './services/api'
-import type { FC, LayersManifest, LonLat, PointInfo, ProfilePoint, RouteResponse, SampleProps, Tab } from './types'
+import type { FC, LayersManifest, LonLat, MapViewport, PointInfo, ProfilePoint, RouteResponse, SampleProps, Tab } from './types'
 import ExplorerPanel from './components/ExplorerPanel'
 import LayerPanel from './components/LayerPanel'
 import SafetyPanel from './components/SafetyPanel'
@@ -18,9 +18,13 @@ import DemoControls from './components/DemoControls'
 import LidarScreen from './components/LidarScreen'
 import { loadSimMission, simConfig, simCommand, type SimCommand, type SimControlsConfig, type SimMission, type SimTelemetry } from './services/sim'
 import { useMedia } from './useMedia'
+import { useConnections } from './useConnections'
+import ConnectionStatus from './components/ConnectionStatus'
+import PlaceCard, { type PlaceViewTab, type SelectedPlace } from './components/PlaceCard'
 
 // recharts is only needed once a route exists -> load it on demand (separate chunk)
 const ElevationProfile = lazy(() => import('./components/ElevationProfile'))
+const PlaceViewer = lazy(() => import('./components/PlaceViewer'))
 
 const INITIAL_LAYERS: MapLayerState = {
   base: 'viking',
@@ -50,8 +54,13 @@ export default function App() {
 
   const [cursor, setCursor] = useState<LonLat | null>(null)
   const [zoom, setZoom] = useState(13)
+  const [viewport, setViewport] = useState<MapViewport | null>(null)
   const [info, setInfo] = useState<PointInfo | null>(null)
-  const [apiOk, setApiOk] = useState<boolean | null>(null)
+  const connections = useConnections()
+  const apiOk = connections.planner === 'checking' ? null : connections.planner === 'online'
+
+  const [place, setPlace] = useState<SelectedPlace | null>(null)
+  const [placeView, setPlaceView] = useState<PlaceViewTab | null>(null)
 
   const [selectedSample, setSelectedSample] = useState<number | null>(null)
   const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; zoom: number; key: number } | null>(null)
@@ -88,13 +97,13 @@ export default function App() {
       try { await simCommand({ type: 'pause' }) } catch (error) { setDemoError(String(error)) }
       setDemo(null); setTelemetry(null); return
     }
-    if (!route || demoStarting.current) return
+    if (!route || demoStarting.current || connections.sim !== 'online') return
     demoStarting.current = true
     setDemoLoading(true); setDemoError(null)
     try {
       const [config, mission] = await Promise.all([simConfig(), loadSimMission(route, selectedRoute ?? route.recommended, { enabled: obstaclesOn, seed: crypto.getRandomValues(new Uint32Array(1))[0] })])
       setControls(config.controls); setSpeed(config.controls.default_speed_m_s); setWarp(1)
-      setPickMode(null); setHoverPoint(null); setTelemetry(null); setDemo(mission)
+      setPickMode(null); setHoverPoint(null); setTelemetry(null); setPlace(null); setPlaceView(null); setDemo(mission)
       if (mobile) setPanelOpen(false)
     } catch (error) { setDemoError(error instanceof Error ? error.message : String(error)) }
     finally { setDemoLoading(false); demoStarting.current = false }
@@ -126,7 +135,6 @@ export default function App() {
       .then(([m, s, t]) => { setManifest(m); setSamples(s); setTraverse(t) })
       .catch((e) => setLoadError(String(e.message ?? e)))
     loadWaypoints().then(setWaypoints).catch(() => {})
-    fetch('/api/health').then((r) => setApiOk(r.ok)).catch(() => setApiOk(false))
   }, [])
 
   // Debounced terrain readout under the cursor.
@@ -147,12 +155,13 @@ export default function App() {
 
   const onMapClick = useCallback((p: LonLat) => {
     if (demo || demoLoading) return
-    if (pickMode === 'start') { setStart(p); setPickMode(end ? null : 'end'); setRoute(null) }
-    else if (pickMode === 'end') { setEnd(p); setPickMode(null); setRoute(null) }
-  }, [pickMode, end, demo, demoLoading])
+    if (pickMode === 'start') { setStart(p); setPickMode(end ? null : 'end'); setRoute(null); setPlace(null); setPlaceView(null) }
+    else if (pickMode === 'end') { setEnd(p); setPickMode(null); setRoute(null); setPlace(null); setPlaceView(null) }
+    else if (!mobile) setPlace(p)
+  }, [pickMode, end, demo, demoLoading, mobile])
 
   const plan = useCallback(async (s = start, e = end) => {
-    if (!s || !e) return
+    if (!s || !e || connections.planner !== 'online' || routeLoading || demo || demoLoading) return
     setRouteLoading(true); setRouteError(null)
     try {
       const r = await planRoute(s, e)
@@ -161,7 +170,7 @@ export default function App() {
     } catch (err) {
       setRouteError(err instanceof Error ? err.message : String(err)); setRoute(null)
     } finally { setRouteLoading(false) }
-  }, [start, end, mobile])
+  }, [start, end, mobile, connections.planner, routeLoading, demo, demoLoading])
 
   const selectTab = (t: Tab) => {
     if (t === tab) setPanelOpen((o) => !o)
@@ -169,7 +178,8 @@ export default function App() {
   }
   const setTarget = (lon: number, lat: number) => {
     if (demo || demoLoading) return
-    setEnd({ lon, lat }); setRoute(null); setTab('mission'); setPanelOpen(true)
+    setPlace(null); setPlaceView(null)
+    setEnd({ lon, lat }); setRoute(null); setRouteError(null); setTab('mission'); setPanelOpen(true)
     if (!start) setStart({ lon: LANDING_SITE.lon, lat: LANDING_SITE.lat })
   }
   const preset = () => {
@@ -202,19 +212,19 @@ export default function App() {
           onFly={(lon, lat) => fly(lon, lat, mobile ? 16 : 17)} onSetTarget={setTarget} />
       )}
       {tab === 'mission' && (
-        <MissionPanel demoActive={!!demo} demoLoading={demoLoading} obstaclesOn={obstaclesOn} onObstacles={setObstaclesOn}
+        <MissionPanel plannerState={connections.planner} simState={connections.sim} demoActive={!!demo} demoLoading={demoLoading} obstaclesOn={obstaclesOn} onObstacles={setObstaclesOn}
           onDemo={runDemo} demoError={demoError}
           demoControls={<DemoControls active={!!demo} config={controls} telemetry={telemetry} speed={speed} warp={warp} onCommand={command} />}
           start={start} end={end} pickMode={pickMode}
           setPickMode={(m) => { setPickMode(m); if (m && mobile) setPanelOpen(false) }}
           onPlan={() => plan()} onReset={() => { setStart(null); setEnd(null); setRoute(null); setRouteError(null); setPickMode(null) }}
-          onPreset={preset} loading={routeLoading} error={routeError ?? (apiOk === false ? 'Backend API not reachable on :8000. Start it with `pixi run backend`.' : null)}
+          onPreset={preset} loading={routeLoading} error={routeError}
           route={route} selected={selectedRoute} onSelect={setSelectedRoute} />
       )}
     </>
   )
 
-  const profile = !demo && selRoute && showProfile && tab === 'mission' && (
+  const profile = !demo && !place && !placeView && selRoute && showProfile && tab === 'mission' && (
     <Suspense fallback={null}>
       <ElevationProfile route={selRoute} compact={mobile} onHover={setHoverPoint}
         onClose={() => { setShowProfile(false); setHoverPoint(null) }} />
@@ -234,15 +244,19 @@ export default function App() {
     <div className={demo ? 'mo-tracking glass absolute right-3 bottom-[76px] z-[1000] w-[200px] overflow-hidden rounded-lg md:bottom-[60px] lg:bottom-[207px]' : 'absolute inset-0'}>
       <div className={demo ? 'flex h-7 items-center justify-between px-2 text-[10px]' : 'hidden'}><span>Tracking · {selRoute?.label}</span><span>{((telemetry?.nav.progress ?? 0) * 100).toFixed(0)}%</span></div>
       <div className={demo ? 'h-[110px]' : 'h-full'}>
-    <MarsMap tracking={!!demo} rover={telemetry} rocks={demo?.obstacles.rocks} craters={demo?.obstacles.craters} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
+    <MarsMap place={place} showPlaces={!mobile && !demo && !pickMode}
+      onPanoramaClick={(point) => { setPickMode(null); setPlace(point); setPlaceView('panorama') }}
+      tracking={!!demo} rover={telemetry} rocks={demo?.obstacles.rocks} craters={demo?.obstacles.craters} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
       route={route} selectedRoute={selectedRoute} start={start} end={end} pickMode={pickMode}
-      selectedSample={selectedSample} hoverPoint={hoverPoint} flyTo={flyTo} onCursor={onCursor} onMapClick={onMapClick}
+      onViewportChange={setViewport} selectedSample={selectedSample} hoverPoint={hoverPoint} flyTo={flyTo} onCursor={onCursor} onMapClick={onMapClick}
       crisp={zoom >= 16}
       fitPadding={mobile ? [[24, 80], [24, 230]] : [[panelOpen ? 470 : 100, 90], [260, 230]]}
-      onSampleClick={(no) => { if (!demo) { setSelectedSample(no); setTab('science'); setPanelOpen(true) } }} />
+      onSampleClick={(no) => { if (!demo) { setSelectedSample(no); setTab('science'); setPanelOpen(true); const sample = samples?.features.find(f => f.properties.sample_no === no); if (sample && !mobile) { const [lon, lat] = sample.geometry.coordinates as [number, number]; setPlace({ lon, lat, name: sample.properties.name }) } } }} />
       </div>
     </div>
   )
+
+  const connectionStatus = <ConnectionStatus planner={connections.planner} sim={connections.sim} checking={connections.checking} onRetry={connections.refresh} />
 
   const demoBackground = demo && <iframe ref={iframe} key={demo.id} title="Mars 3D simulation" src={`/sim/?embed=1&m=${encodeURIComponent(demo.id)}`} className="absolute inset-0 h-full w-full border-0" />
   const lidar = demo?.obstacles.enabled && <div className="absolute right-3 bottom-[224px] z-[1000] md:bottom-[207px] lg:bottom-[353px]"><LidarScreen /></div>
@@ -258,6 +272,7 @@ export default function App() {
           <div className="glass hud-corners pointer-events-auto rounded-xl px-3 py-2">
             <div className="display text-[13px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
             <div className="label !text-[8.5px]">Jezero · EVA planner</div>
+            {connectionStatus}
           </div>
           {info?.inside && (
             <div className="glass pointer-events-auto rounded-xl px-3 py-1.5 font-mono text-[10.5px] leading-snug">
@@ -287,12 +302,22 @@ export default function App() {
     )
   }
 
+  const placeCard = place && !placeView && !demo && !pickMode && <aside aria-label="Selected location" className="mo-place-card glass pointer-events-auto w-[286px] shrink-0 rounded-2xl shadow-2xl">
+    <PlaceCard point={place} plannerOnline={apiOk === true} onView={setPlaceView}
+      onStart={() => { setStart({ lon: place.lon, lat: place.lat }); setRoute(null); setRouteError(null); setPickMode(null); setPlace(null); setTab('mission'); setPanelOpen(true) }}
+      onTarget={() => setTarget(place.lon, place.lat)} onClose={() => setPlace(null)} />
+  </aside>
+  const pointViewer = place && placeView && !demo && !pickMode && <Suspense fallback={<div className="glass absolute bottom-[60px] right-3 z-[1200] rounded-xl p-4 text-xs">Loading place viewer…</div>}>
+    <PlaceViewer point={place} tab={placeView} online={apiOk === true} onTab={setPlaceView} onClose={() => setPlaceView(null)} onVisit={point => { setPlace(point); fly(point.lon, point.lat, 17) }} />
+  </Suspense>
+
   /* ===================== desktop / laptop layout ===================== */
   return (
     <div className="relative h-full w-full overflow-hidden">
       {demoBackground}
       {map}
       {lidar}
+      {pointViewer}
 
       {/* ---- left: icon rail + panel ---- */}
       <div className="pointer-events-none absolute bottom-[60px] left-3 top-3 z-[1000] flex gap-3">
@@ -314,6 +339,7 @@ export default function App() {
           <div>
             <div className="display text-[15px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
             <div className="label !text-[9px]">Jezero Crater · EVA planning prototype</div>
+            {connectionStatus}
           </div>
           <div className="hidden h-8 w-px bg-line-2 lg:block" />
           <div className="hidden font-mono text-[10.5px] leading-tight text-muted lg:block">
@@ -334,8 +360,10 @@ export default function App() {
         {!demo && <QuickLayers layers={layers} setLayers={setLayers} manifest={manifest} />}
       </div>
 
-      {/* ---- bottom-right: legend dock + locator (hidden on small laptops when a profile is open) ---- */}
-      <div className={`pointer-events-none absolute bottom-[60px] right-3 z-[1000] flex-col items-end gap-2 ${demo ? 'hidden' : profile ? 'hidden xl:flex' : 'flex'}`}>
+      {/* Fixed dock: selected place sits directly to the left of the locator. */}
+      <div className={`pointer-events-none absolute bottom-[60px] right-3 z-[1200] items-end gap-3 ${demo || placeView ? 'hidden' : profile ? 'hidden xl:flex' : 'flex'}`}>
+        {placeCard}
+        <div className="flex flex-col items-end gap-2">
         {(activeRasters.length > 0 || layers.samples) && (
           <div className="glass pointer-events-auto w-[220px] space-y-2.5 rounded-xl p-3 fade-in">
             {activeRasters.slice(-2).map((r) => (
@@ -358,7 +386,9 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="pointer-events-auto hidden lg:block"><MiniMap aoi={manifest?.aoi_bounds ?? null} /></div>
+        <div className="pointer-events-auto"><MiniMap aoi={manifest?.aoi_bounds ?? null} viewport={viewport}
+          onNavigate={(center, z) => mapRef.current?.setView([center.lat, center.lon], z, { animate: false })} /></div>
+        </div>
       </div>
 
       {/* ---- bottom-centre: elevation profile ---- */}
