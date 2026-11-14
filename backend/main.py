@@ -22,6 +22,12 @@ METADATA = ROOT / "data" / "metadata"
 app = FastAPI(title="MARS ODYSSEY API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+try:
+    from odyssey_copilot.backend.router import router as copilot_router
+    app.include_router(copilot_router, prefix="/api/copilot")
+except ImportError:
+    pass
+
 
 @lru_cache(maxsize=1)
 def samples() -> list[dict]:

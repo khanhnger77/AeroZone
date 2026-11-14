@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import re
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter
 
@@ -30,8 +31,18 @@ except ImportError:
 
 
 def get_gemini_client():
-    """Return a google-genai Client if GEMINI_API_KEY is configured."""
-    api_key = os.environ.get("GEMINI_API_KEY")
+    """Return a google-genai Client if GEMINI_API_KEY or GOOGLE_API_KEY is configured."""
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        for p in [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]:
+            if p.exists():
+                for line in p.read_text().splitlines():
+                    clean = line.strip()
+                    if clean.startswith(("GEMINI_API_KEY=", "GOOGLE_API_KEY=")):
+                        api_key = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+            if api_key:
+                break
     if _genai_available and api_key:
         try:
             return genai.Client(api_key=api_key)
