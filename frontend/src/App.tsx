@@ -16,7 +16,15 @@ import MiniMap from './components/MiniMap'
 import { Legend } from './components/ui'
 import DemoControls from './components/DemoControls'
 import LidarScreen from './components/LidarScreen'
-import { loadSimMission, simConfig, simCommand, type SimCommand, type SimControlsConfig, type SimMission, type SimTelemetry } from './services/sim'
+import { loadSimMission, loadSimWorld, simConfig, simCommand, type SimCommand, type SimControlsConfig, type SimMission, type SimTelemetry } from './services/sim'
+import LocationPanel from './components/LocationPanel'
+import TargetPicker from './components/TargetPicker'
+import { AgentPopup, Joystick, LocationPopup, MapLegend, NavigatePanel, ObjectSelector } from './components/SimOverlays'
+import {
+  LOCATION_TYPES, MARKER_STYLE, OBJECT_KINDS, loadLocations, nextLocationName, saveLocations, useSimWorld,
+  type LocationType, type MapLocation, type MarkerType, type ObjectKind,
+} from './sim/world'
+import { Gamepad2, Navigation, Power } from 'lucide-react'
 import { useMedia } from './useMedia'
 import { useConnections } from './useConnections'
 import ConnectionStatus from './components/ConnectionStatus'
@@ -28,8 +36,8 @@ const ElevationProfile = lazy(() => import('./components/ElevationProfile'))
 const PlaceViewer = lazy(() => import('./components/PlaceViewer'))
 const WeatherPanel = lazy(() => import('./components/WeatherPanel'))
 
-/** Width of the expanded top-centre info box (title, status chips, AOI, collapse), measured 514 px. */
-const HUD_BOX_W = 516
+/** Width of the expanded top-centre info box (title, sim status + speed, AOI, collapse), measured 570 px. */
+const HUD_BOX_W = 572
 
 const INITIAL_LAYERS: MapLayerState = {
   base: 'viking',
@@ -143,6 +151,17 @@ export default function App() {
   const [telemetry, setTelemetry] = useState<SimTelemetry | null>(null)
   const [speed, setSpeed] = useState(0.042)
   const [warp, setWarp] = useState(1)
+
+  // ---- user locations (Location tab), legend toggles, and what the map is focused on
+  const [locations, setLocations] = useState<MapLocation[]>(loadLocations)
+  useEffect(() => saveLocations(locations), [locations])
+  const [visibleTypes, setVisibleTypes] = useState<Record<MarkerType, boolean>>(
+    () => Object.fromEntries([...LOCATION_TYPES, ...OBJECT_KINDS].map(t => [t, true])) as Record<MarkerType, boolean>)
+  const toggleType = useCallback((t: MarkerType) => setVisibleTypes(v => ({ ...v, [t]: !v[t] })), [])
+  const [placing, setPlacing] = useState<LocationType | null>(null)
+  const [focus, setFocus] = useState<{ kind: 'location' | 'agent'; id: string } | null>(null)
+  /** object armed by "Traverse here": the next map / location / object click gives it a target */
+  const [traverseFor, setTraverseFor] = useState<string | null>(null)
   const iframe = useRef<HTMLIFrameElement>(null)
   const demoStarting = useRef(false)
   const command = useCallback(async (cmd: SimCommand) => {
@@ -152,30 +171,104 @@ export default function App() {
       if (cmd.type === 'set_warp') setWarp(cmd.value)
     } catch (error) { setDemoError(error instanceof Error ? error.message : String(error)) }
   }, [])
-  const runDemo = async () => {
-    if (demo) {
-      try { await simCommand({ type: 'pause' }) } catch (error) { setDemoError(String(error)) }
-      setDemo(null); setTelemetry(null); return
-    }
-    if (!route || demoStarting.current || connections.sim !== 'online') return
+
+  // ---- simulation session: survives closing the 3D view; "End simulation" ends it.
+  const [session, setSession] = useState<{ kind: 'path' | 'world'; mission: SimMission } | null>(null)
+  const startedMissions = useRef(new Set<string>())   // missions already started (re-opening the 3D view must not restart)
+  const [object, setObject] = useState<ObjectKind>('rover')
+  const [roverName, setRoverName] = useState('Perseverance')
+  const [worldObjects, setWorldObjects] = useState<{ kind: ObjectKind; name: string }[]>([
+    { kind: 'rover', name: 'Rover_1' }, { kind: 'astronaut', name: 'Astronaut_1' }, { kind: 'astronaut', name: 'Astronaut_2' }])
+  const [worldObstacles, setWorldObstacles] = useState(true)
+  const [simCamera, setSimCamera] = useState<'chase' | 'orbit' | 'overview'>('chase')
+  const [navOpen, setNavOpen] = useState(false)
+  const [navPicking, setNavPicking] = useState(false)
+  const [joystickOn, setJoystickOn] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)   // pop-up map for Navigate to → Select on map
+  const [trackLock, setTrackLock] = useState(true)      // tracking minimap keeps the arrow centred
+  const clearSession = useCallback(() => {
+    setSession(null); setDemo(null); setTelemetry(null); setFocus(null); setTraverseFor(null); setNavOpen(false); setNavPicking(false)
+  }, [])
+  const world = useSimWorld(!!session, clearSession)
+  const liveWorld = world && session && world.mission === session.mission.id ? world : null
+  const agents = liveWorld?.agents ?? null
+  const selectedAgent = agents?.find(a => a.id === liveWorld?.selected) ?? null
+  useEffect(() => {
+    if (connections.sim !== 'online') return
+    simConfig().then(c => { setRoverName(c.rover?.name ?? 'Perseverance'); setControls(cur => cur ?? c.controls) }).catch(() => {})
+  }, [connections.sim])
+
+  const startDemo = async (kind: 'path' | 'world') => {
+    if (demoStarting.current || connections.sim !== 'online' || (kind === 'path' && !route)) return
     demoStarting.current = true
     setDemoLoading(true); setDemoError(null)
     try {
-      const [config, mission] = await Promise.all([simConfig(), loadSimMission(route, selectedRoute ?? route.recommended, { enabled: obstaclesOn, seed: crypto.getRandomValues(new Uint32Array(1))[0] })])
+      const seed = crypto.getRandomValues(new Uint32Array(1))[0]
+      const [config, mission] = await Promise.all([simConfig(), kind === 'path'
+        ? loadSimMission(route!, selectedRoute ?? route!.recommended, { enabled: obstaclesOn, seed }, object)
+        : loadSimWorld(worldObjects, { enabled: worldObstacles, seed })])
       setControls(config.controls); setSpeed(config.controls.default_speed_m_s); setWarp(1)
-      setPickMode(null); setHoverPoint(null); setTelemetry(null); setPlace(null); setPlaceView(null); setDemo(mission)
+      setPickMode(null); setHoverPoint(null); setTelemetry(null); setPlace(null); setPlaceView(null)
+      setFocus(null); setTraverseFor(null); setNavOpen(false); setSimCamera(kind === 'world' ? 'overview' : 'chase')
+      setSession({ kind, mission }); setDemo(mission)
       if (mobile) setPanelOpen(false)
     } catch (error) { setDemoError(error instanceof Error ? error.message : String(error)) }
     finally { setDemoLoading(false); demoStarting.current = false }
   }
+  /** Exit simulation: back to the background map; the simulation keeps running there. */
+  const exitDemo = () => {
+    setDemo(null); setTelemetry(null); setNavOpen(false); setNavPicking(false); setJoystickOn(false)
+    if (liveWorld?.selected) setFocus({ kind: 'agent', id: liveWorld.selected })   // centre + track + info panel
+  }
+  const reopenDemo = () => { if (session) { setSimCamera(session.kind === 'world' ? 'overview' : 'chase'); setDemo(session.mission) } }
+  /** End simulation: stops everything on the server; the object icons leave the map. */
+  const endSimulation = async () => {
+    try { await simCommand({ type: 'end' }) } catch { /* server gone: end locally anyway */ }
+    clearSession()
+  }
+  const runDemo = () => (demo && session?.kind === 'path' ? exitDemo() : startDemo('path'))
+  const goto = useCallback((agent: string | undefined, p: { lon: number; lat: number }, route?: string) => command({ type: 'goto', agent, lon: p.lon, lat: p.lat, route }), [command])
+  const intercept = useCallback((agent: string | undefined, target: string) => command({ type: 'intercept', agent, target }), [command])
+  const postToSim = useCallback((msg: Record<string, unknown>) => {
+    iframe.current?.contentWindow?.postMessage({ source: 'mo-hub', ...msg }, location.origin)
+  }, [])
+  // Locations for the 3D page's ground guide arrows (sent on change and when the page is ready).
+  const sendLocations = useRef(() => {})
+  sendLocations.current = () => postToSim({ type: 'locations', list: locations.map(({ name, type, lon, lat }) => ({ name, type, lon, lat })) })
+  useEffect(() => { if (demo) sendLocations.current() }, [demo, locations])
+  const drive = useCallback((v: number, w: number) => postToSim({ type: 'command', command: { type: 'drive', v, w } }), [postToSim])
+  // WASD while the planner (not the 3D frame) has keyboard focus, in the chase / orbit views.
+  useEffect(() => {
+    if (!demo || session?.kind !== 'world' || simCamera === 'overview') return   // no manual control in the path demo
+    const keys = new Set<string>()
+    const MAP: Record<string, string> = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' }
+    let timer: ReturnType<typeof setInterval> | undefined
+    const send = () => drive((keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0), (keys.has('l') ? 1 : 0) - (keys.has('r') ? 1 : 0))
+    const on = (e: KeyboardEvent, down: boolean) => {
+      const k = MAP[e.code]
+      if (!k || (e.target instanceof HTMLElement && e.target.closest('input, select, textarea'))) return
+      if (down && e.repeat) return
+      e.preventDefault()
+      if (down) keys.add(k); else keys.delete(k)
+      send(); clearInterval(timer)
+      if (keys.size) timer = setInterval(send, 100)
+    }
+    const kd = (e: KeyboardEvent) => on(e, true), ku = (e: KeyboardEvent) => on(e, false)
+    window.addEventListener('keydown', kd); window.addEventListener('keyup', ku)
+    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); clearInterval(timer) }
+  }, [demo, session?.kind, simCamera, drive])
+
   useEffect(() => {
     if (!demo || !controls) return
-    let active = true, initialized = false
+    let active = true, initialized = startedMissions.current.has(demo.id)
     const receive = async (event: MessageEvent) => {
       if (event.origin !== location.origin || event.source !== iframe.current?.contentWindow || event.data?.source !== 'mo-sim') return
       const data = event.data
+      if (data.type === 'camera') setSimCamera(data.mode)
+      if (data.type === 'ready') sendLocations.current()     // the 3D page's ground arrows point at these
       if (data.type === 'ready' && data.mission === demo.id && !initialized) {
         initialized = true
+        startedMissions.current.add(demo.id)
         try {
           await simCommand({ type: 'set_speed', value: controls.default_speed_m_s })
           if (!active) return
@@ -214,11 +307,45 @@ export default function App() {
   const fly = useCallback((lon: number, lat: number, z = 16) => setFlyTo({ lon, lat, zoom: z, key: Date.now() }), [])
 
   const onMapClick = useCallback((p: LonLat) => {
+    if (demo && navPicking) { goto(undefined, p); setNavPicking(false); setNavOpen(false); return }   // "Select on map"
     if (demo || demoLoading) return
+    if (placing) {
+      setLocations(list => {
+        const loc = { id: crypto.randomUUID(), name: nextLocationName(placing, list), type: placing, lon: p.lon, lat: p.lat }
+        setFocus({ kind: 'location', id: loc.id })
+        return [...list, loc]
+      })
+      setPlacing(null); return
+    }
+    if (traverseFor) { goto(traverseFor, p); setFocus({ kind: 'agent', id: traverseFor }); setTraverseFor(null); return }
     if (pickMode === 'start') { setStart(p); setPickMode(end ? null : 'end'); setRoute(null); setPlace(null); setPlaceView(null) }
     else if (pickMode === 'end') { setEnd(p); setPickMode(null); setRoute(null); setPlace(null); setPlaceView(null) }
+    else if (focus) setFocus(null)                    // a plain click closes the object / location popup
     else if (!mobile) setPlace(p)
-  }, [pickMode, end, demo, demoLoading, mobile])
+  }, [pickMode, end, demo, demoLoading, mobile, navPicking, placing, traverseFor, focus, goto])
+
+  const moveLocation = useCallback((id: string, pt: LonLat) => setLocations(list => list.map(l => (l.id === id ? { ...l, ...pt } : l))), [])
+  const focusLocation = useCallback((id: string) => {
+    const loc = locations.find(l => l.id === id)
+    if (!loc) return
+    if (traverseFor && !demo) { goto(traverseFor, loc, 'cautious'); setTraverseFor(null); setFocus({ kind: 'agent', id: traverseFor }); return }   // locations: cautious route
+    setFocus({ kind: 'location', id }); setPlace(null); setPlaceView(null)
+    fly(loc.lon, loc.lat, Math.max(zoom, 15))
+  }, [locations, traverseFor, demo, goto, fly, zoom])
+  const focusAgent = useCallback((id: string) => {
+    if (traverseFor && !demo && id !== traverseFor) { intercept(traverseFor, id); setFocus({ kind: 'agent', id: traverseFor }); setTraverseFor(null); return }
+    setFocus({ kind: 'agent', id }); setPlace(null); setPlaceView(null)
+  }, [traverseFor, demo, intercept])
+  const selectAgent = useCallback((id: string) => { command({ type: 'select', agent: id }); setFocus({ kind: 'agent', id }) }, [command])
+  // A newly selected object is centred, tracked and its info panel opens.
+  const lastSelected = useRef<string | null>(null)
+  useEffect(() => {
+    const id = liveWorld?.selected ?? null
+    if (id && id !== lastSelected.current && !demo) setFocus({ kind: 'agent', id })
+    lastSelected.current = id
+  }, [liveWorld?.selected, demo])
+  const focusedAgent = focus?.kind === 'agent' ? agents?.find(a => a.id === focus.id) ?? null : null
+  const focusedLocation = focus?.kind === 'location' ? locations.find(l => l.id === focus.id) ?? null : null
 
   const plan = useCallback(async (s = start, e = end) => {
     if (!s || !e || connections.planner !== 'online' || routeLoading || demo || demoLoading) return
@@ -341,6 +468,12 @@ export default function App() {
     <>
       {loadError && <div className="m-3 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">Data failed to load: {loadError}. Run <code>pixi run data</code>.</div>}
       {tab === 'explorer' && <ExplorerPanel manifest={manifest} onFly={(lon, lat, z) => { fly(lon, lat, z); if (mobile) setPanelOpen(false) }} />}
+      {tab === 'location' && <LocationPanel locations={locations} visible={visibleTypes} onToggle={toggleType}
+        highlight={focus?.kind === 'location' ? focus.id : null} placing={placing}
+        onPlace={t => { setPlacing(t); setTraverseFor(null); if (t && mobile) setPanelOpen(false) }}
+        onFocus={focusLocation} selected={selectedAgent}
+        onMove={(id, pt) => setLocations(list => list.map(l => (l.id === id ? { ...l, ...pt } : l)))}
+        onDelete={id => { setLocations(list => list.filter(l => l.id !== id)); if (focus?.id === id) setFocus(null) }} />}
       {tab === 'layers' && <LayerPanel manifest={manifest} layers={layers} setLayers={setLayers} detailed />}
       {tab === 'safety' && <SafetyPanel manifest={manifest} />}
       {tab === 'weather' && <Suspense fallback={<div className="p-5 text-sm text-muted">Loading weather…</div>}><WeatherPanel requestedSol={weatherSol} onSelectSol={setWeatherSol} onFly={point => fly(point.lon, point.lat, 16)} /></Suspense>}
@@ -351,12 +484,21 @@ export default function App() {
       {tab === 'mission' && (
         <MissionPanel plannerState={connections.planner} simState={connections.sim} demoActive={!!demo} demoLoading={demoLoading} obstaclesOn={obstaclesOn} onObstacles={setObstaclesOn}
           onDemo={runDemo} demoError={demoError}
-          demoControls={<DemoControls active={!!demo} config={controls} telemetry={telemetry} speed={speed} warp={warp} onCommand={command} />}
+          demoControls={<DemoControls active={!!demo} config={controls} telemetry={telemetry} speed={session?.kind === 'world' ? (selectedAgent?.cruise_m_s ?? speed) : speed} warp={warp} onCommand={command} />}
           start={start} end={end} pickMode={pickMode}
           setPickMode={(m) => { setPickMode(m); if (m && mobile) setPanelOpen(false) }}
           onPlan={() => plan()} onReset={() => { setStart(null); setEnd(null); setRoute(null); setRouteError(null); setPickMode(null) }}
           onPreset={preset} loading={routeLoading} error={routeError}
-          route={route} selected={selectedRoute} onSelect={setSelectedRoute} />
+          route={route} selected={selectedRoute} onSelect={setSelectedRoute}
+          object={object} onObject={setObject} roverName={roverName} session={session?.kind ?? null} onReopen={reopenDemo}
+          worldObjects={worldObjects}
+          onWorldAdd={k => setWorldObjects(list => {
+            const n = Math.max(0, ...list.filter(o => o.kind === k).map(o => Number(o.name.split('_')[1]) || 0)) + 1
+            return [...list, { kind: k, name: `${k === 'rover' ? 'Rover' : 'Astronaut'}_${n}` }]
+          })}
+          onWorldRemove={i => setWorldObjects(list => list.filter((_, j) => j !== i))}
+          worldObstacles={worldObstacles} onWorldObstacles={setWorldObstacles}
+          onWorldDemo={() => (demo && session?.kind === 'world' ? exitDemo() : startDemo('world'))} />
       )}
     </>
   )
@@ -368,23 +510,33 @@ export default function App() {
     </Suspense>
   )
 
-  const pickBanner = !demo && pickMode && (
-    <div className="pointer-events-none absolute left-1/2 top-5 z-[1100] w-max max-w-[92vw] -translate-x-1/2">
-      <div className="glass fade-in flex items-center gap-2 rounded-full border-mars/60 px-4 py-2 text-sm">
+  const armedName = traverseFor ? agents?.find(a => a.id === traverseFor)?.name : null
+  const pickBanner = !demo && (pickMode || placing || traverseFor) && (
+    <div className="pointer-events-none absolute bottom-[200px] left-1/2 z-[1100] w-max max-w-[92vw] -translate-x-1/2">
+      <div className="glass fade-in pointer-events-auto flex items-center gap-2 rounded-full border-mars/60 px-4 py-2 text-sm">
         <span className={`h-2 w-2 animate-pulse rounded-full ${pickMode === 'start' ? 'bg-green-400' : 'bg-mars'}`} />
-        {mobile ? 'Tap' : 'Click'} the map to place the <b>{pickMode === 'start' ? 'START' : 'TARGET'}</b> point
+        {placing ? <>{mobile ? 'Tap' : 'Click'} the map to add a <b>{placing}</b> location</>
+          : traverseFor ? <>{mobile ? 'Tap' : 'Click'} the map or a location for <b>{armedName}</b> to travel to, or an object to intercept</>
+          : <>{mobile ? 'Tap' : 'Click'} the map to place the <b>{pickMode === 'start' ? 'START' : 'TARGET'}</b> point</>}
+        {(placing || traverseFor) && <button type="button" onClick={() => { setPlacing(null); setTraverseFor(null) }} className="ml-1 text-xs text-muted hover:text-ink">Cancel</button>}
       </div>
     </div>
   )
 
   const map = (
-    <div className={demo ? 'mo-tracking glass absolute right-3 bottom-[76px] z-[1000] w-[200px] overflow-hidden rounded-lg md:bottom-[60px] lg:bottom-[207px]' : 'absolute inset-0'}>
-      <div className={demo ? 'flex h-7 items-center justify-between px-2 text-[10px]' : 'hidden'}><span>Tracking · {selRoute?.label}</span><span>{((telemetry?.nav.progress ?? 0) * 100).toFixed(0)}%</span></div>
+    <div className={demo ? 'mo-tracking glass absolute right-3 bottom-[76px] z-[1000] w-[200px] overflow-hidden rounded-lg md:bottom-[60px]' : 'absolute inset-0'}>
+      <div className={demo ? 'flex h-7 items-center justify-between px-2 text-[10px]' : 'hidden'}><span>Tracking · {session?.kind === 'world' ? selectedAgent?.name : selRoute?.label}{navPicking ? ' · click a target' : ''}</span><span className="flex items-center gap-1.5">{session?.kind === 'world' ? '' : `${((telemetry?.nav.progress ?? 0) * 100).toFixed(0)}%`}<button type="button" onClick={() => setTrackLock(v => !v)} aria-pressed={trackLock} title={trackLock ? 'Centred on the object (click to free the map)' : 'Track and centre the object'} className={`grid h-5 w-5 place-items-center rounded ${trackLock ? 'bg-cyan/20 text-cyan' : 'text-muted hover:text-ink'}`}><Crosshair size={12} /></button></span></div>
       <div className={demo ? 'h-[110px]' : 'h-full'}>
     <MarsMap place={place} showPlaces={!mobile && !demo && !pickMode}
       onPanoramaClick={(point) => { setPickMode(null); setPlace(point); setPlaceView('panorama') }}
-      tracking={!!demo} rover={telemetry} rocks={demo?.obstacles.rocks} craters={demo?.obstacles.craters} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
-      route={route} selectedRoute={selectedRoute} start={start} end={end} pickMode={pickMode}
+      tracking={!!demo} rover={telemetry} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
+      route={route} selectedRoute={selectedRoute} start={start} end={end}
+      pickMode={pickMode ?? (placing || traverseFor || navPicking ? 'end' : null)}
+      locations={locations} agents={agents} visibleTypes={visibleTypes} highlight={focus} selectedAgent={liveWorld?.selected ?? null}
+      onLocationClick={focusLocation} onAgentClick={focusAgent}
+      onLocationMove={moveLocation}
+      follow={focusedAgent && !traverseFor ? { lon: focusedAgent.lon, lat: focusedAgent.lat } : null}   // free map while choosing
+      trackLock={trackLock}
       onWaypointClick={sol => { if (demo || demoLoading) return; setWeatherSol(sol); setTab('weather'); setPanelOpen(true); setPlace(null); setPlaceView(null) }}
       onViewportChange={setViewport} selectedSample={selectedSample} hoverPoint={hoverPoint} flyTo={flyTo} onCursor={onCursor} onMapClick={onMapClick}
       crisp={zoom >= 16}
@@ -394,10 +546,97 @@ export default function App() {
     </div>
   )
 
-  const connectionStatus = <ConnectionStatus planner={connections.planner} sim={connections.sim} checking={connections.checking} onRetry={connections.refresh} />
+  // Info box: one light for the simulation engine (running or not), plus "End simulation".
+  const simStatus = (
+    <div className="mt-2 flex max-w-[360px] flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px]" role="status" aria-live="polite">
+      <span className="flex items-center gap-1.5" title={`Simulation ${session ? 'running' : 'not running'} · 3D server ${connections.sim}`}>
+        <i aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${session ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : connections.sim === 'checking' ? 'animate-pulse bg-amber-300' : 'bg-faint'}`} />
+        Simulation · {session ? `running (${session.kind === 'world' ? 'world demo' : 'path traverse'})` : 'not running'}
+      </span>
+      {session && <button type="button" onClick={endSimulation} title="Stop the simulation completely; the object icons leave the map"
+        className="flex items-center gap-1 rounded-full border border-red-400/40 px-2 py-0.5 text-red-200 hover:bg-red-500/15">
+        <Power size={11} aria-hidden="true" />End simulation</button>}
+      {session && controls && (
+        <label className="flex items-center gap-1 text-muted" title="Simulation speed (time warp)">Sim speed
+          <select aria-label="Simulation speed" value={warp} onChange={e => command({ type: 'set_warp', value: Number(e.target.value) })} style={{ colorScheme: 'dark' }}
+            className="rounded-full border border-line-2 bg-panel-2 px-1.5 py-0.5 text-ink">
+            {controls.warps.map(v => <option key={v} value={v} className="bg-panel-2">{v}×</option>)}
+          </select>
+        </label>
+      )}
+    </div>
+  )
+  void ConnectionStatus  // the per-service chips moved to the Mission tab's status tags
+
+  const demoOverlay = demo && session && (
+    <>
+      {/* Object choice: bottom centre, just above the status bar. Dark native list (colour-scheme). */}
+      {session.kind === 'world' && agents && (
+        <div className="pointer-events-none fixed bottom-[60px] left-1/2 z-[1350] -translate-x-1/2">
+          <select aria-label="Ride along with an object" value="" style={{ colorScheme: 'dark' }}
+            onChange={e => { const id = e.target.value; if (id) { postToSim({ type: 'camera', mode: 'chase', agent: id }); setSimCamera('chase') } }}
+            className="pointer-events-auto rounded-lg border border-line-2 bg-panel-2 px-3 py-1.5 text-xs text-ink shadow-lg">
+            <option value="" className="bg-panel-2 text-ink">{simCamera === 'overview' ? 'Become an object…' : `Switch object · ${selectedAgent?.name ?? ''}`}</option>
+            {agents.map(a => <option key={a.id} value={a.id} className="bg-panel-2 text-ink">{a.name} · {MARKER_STYLE[a.kind].label}</option>)}
+          </select>
+        </div>
+      )}
+      {simCamera !== 'overview' && selectedAgent && (
+        <div className="absolute bottom-[60px] right-[220px] z-[1000] flex flex-col items-end gap-2">
+          {navOpen && <NavigatePanel me={selectedAgent} agents={agents ?? []} locations={locations} picking={pickerOpen}
+            onPickOnMap={() => setPickerOpen(true)} onClose={() => { setNavOpen(false); setNavPicking(false) }}
+            onGo={item => { if (item.kind === 'agent') intercept(undefined, item.id); else goto(undefined, item, 'cautious'); setNavOpen(false); setNavPicking(false) }} />}
+          <div className="flex gap-2">
+            {session.kind === 'world' && <button type="button" onClick={() => setJoystickOn(v => !v)} aria-pressed={joystickOn} title="Touch controls (virtual joystick)"
+              className={`glass pointer-events-auto grid h-9 w-9 place-items-center rounded-lg ${joystickOn ? 'text-mars' : 'text-muted hover:text-ink'}`}><Gamepad2 size={16} /></button>}
+            <button type="button" onClick={() => { setNavOpen(v => !v); setNavPicking(false) }} aria-expanded={navOpen}
+              className="glass pointer-events-auto flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium hover:text-cyan">
+              <Navigation size={14} aria-hidden="true" />Navigate to</button>
+          </div>
+        </div>
+      )}
+      {pickerOpen && selectedAgent && (
+        <TargetPicker me={selectedAgent} agents={agents ?? []} locations={locations} onCancel={() => setPickerOpen(false)}
+          onConfirm={t => {
+            if (t.kind === 'agent') intercept(undefined, t.id)
+            else goto(undefined, t, t.kind === 'location' ? 'cautious' : undefined)
+            setPickerOpen(false); setNavOpen(false)
+          }} />
+      )}
+      {session.kind === 'world' && simCamera !== 'overview' && joystickOn && (
+        <div className="absolute bottom-[72px] left-[calc(var(--mo-left-w,92px)+24px)] z-[1100]"><Joystick onDrive={drive} /></div>
+      )}
+      {session.kind === 'world' && simCamera !== 'overview' && <p className="pointer-events-none absolute bottom-[100px] left-1/2 z-[900] -translate-x-1/2 rounded-full bg-black/40 px-3 py-1 text-[10.5px] text-white/80">
+        W A S D / arrows to drive{selectedAgent?.mode === 'manual' ? '' : ' · autonomous: ' + (selectedAgent?.mode ?? '')}</p>}
+    </>
+  )
+
+  const objectPopup = !demo && !traverseFor && (focusedAgent && agents ? (
+    <AgentPopup agent={focusedAgent} agents={agents} locations={locations} speeds={controls?.speeds_m_s ?? []}
+      onSpeed={v => command({ type: 'set_speed', value: v, agent: focusedAgent.id })} isSelected={focusedAgent.id === liveWorld?.selected} arming={traverseFor === focusedAgent.id}
+      onSelect={() => selectAgent(focusedAgent.id)} onClose={() => { setFocus(null); setTraverseFor(null) }}
+      onTraverse={() => setTraverseFor(traverseFor === focusedAgent.id ? null : focusedAgent.id)} />
+  ) : focusedLocation ? (
+    <LocationPopup loc={focusedLocation} selected={selectedAgent} canTravel={!!liveWorld}
+      onTravel={() => { goto(undefined, focusedLocation, 'cautious') }} onClose={() => setFocus(null)} />
+  ) : null)
 
   const demoBackground = demo && <iframe ref={iframe} key={demo.id} title="Mars 3D simulation" src={`/sim/?embed=1&m=${encodeURIComponent(demo.id)}`} className="absolute inset-0 h-full w-full border-0" />
-  const lidar = demo?.obstacles.enabled && <div className="absolute right-3 bottom-[224px] z-[1000] md:bottom-[207px] lg:bottom-[353px]"><LidarScreen /></div>
+  // Right column above the tracking minimap: the 3D view selector (moved out of the 3D page) and the lidar.
+  const setView = (mode: 'chase' | 'orbit' | 'overview') => { postToSim({ type: 'camera', mode }); setSimCamera(mode) }
+  const lidar = demo && (
+    <div className="absolute right-3 bottom-[222px] z-[1000] flex w-[200px] flex-col gap-2 md:bottom-[206px]">
+      <div role="group" aria-label="3D view" className="glass flex gap-0.5 rounded-lg p-0.5 text-[10.5px]">
+        {(['chase', 'orbit', 'overview'] as const).map(m => (
+          <button key={m} type="button" aria-pressed={simCamera === m} onClick={() => setView(m)}
+            className={`flex-1 rounded-md py-1 transition-colors ${simCamera === m ? 'bg-mars/20 text-ink' : 'text-muted hover:bg-white/5 hover:text-ink'}`}>
+            {m === 'overview' ? 'Whole AOI' : m === 'chase' ? 'Chase' : 'Orbit'}
+          </button>
+        ))}
+      </div>
+      {demo.obstacles.enabled && !(session?.kind === 'world' && simCamera === 'overview') && <LidarScreen />}
+    </div>
+  )
 
   /* ===================== phone layout (< 768 px) ===================== */
   if (mobile) {
@@ -406,11 +645,13 @@ export default function App() {
         {demoBackground}
         {map}
         {lidar}
+        {demoOverlay}
+        {objectPopup}
         <div className="pointer-events-none absolute left-2 right-2 top-2 z-[1000] flex items-start justify-between gap-2">
-          <div className="glass hud-corners pointer-events-auto rounded-xl px-3 py-2">
+          <div className={`glass hud-corners pointer-events-auto rounded-xl px-3 py-2 ${demo ? 'hidden' : ''}`}>
             <div className="display text-[13px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
             <div className="label !text-[8.5px]">Jezero · EVA planner</div>
-            {connectionStatus}
+            {simStatus}
           </div>
           {info?.inside && (
             <div className="glass pointer-events-auto rounded-xl px-3 py-1.5 font-mono text-[10.5px] leading-snug">
@@ -455,6 +696,8 @@ export default function App() {
       {demoBackground}
       {map}
       {lidar}
+      {demoOverlay}
+      {objectPopup}
       {pointViewer}
 
       {/* ---- left: icon rail + panel ---- */}
@@ -466,7 +709,7 @@ export default function App() {
           </aside>
         )}
         <button onClick={() => setPanelOpen((o) => !o)} aria-label={panelOpen ? 'Collapse panel' : 'Expand panel'}
-          className="glass pointer-events-auto mt-3 grid h-8 w-6 place-items-center self-start rounded-lg text-muted hover:text-ink">
+          className="glass pointer-events-auto grid h-8 w-6 place-items-center self-center rounded-lg text-muted hover:text-ink">
           {panelOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
       </div>
@@ -475,13 +718,13 @@ export default function App() {
            Fixed to the middle of the screen, above the other overlays: opening or resizing the side
            panel, the Copilot or the dock never moves it. When the full box would run into the side
            panel or the Copilot (narrow windows), the compact pill shows in the same spot. */}
-      <div className="pointer-events-none fixed left-1/2 top-3 z-[1400] -translate-x-1/2">
+      <div className={`pointer-events-none fixed left-1/2 top-3 z-[1400] -translate-x-1/2 ${demo ? 'hidden' : ''}`}>
         {hudOpen && (hudForced || hudRoom >= HUD_BOX_W) && (
           <div className="glass hud-corners pointer-events-auto flex items-center gap-4 rounded-xl py-2.5 pl-4 pr-2 fade-in">
             <div className="shrink-0">
               <div className="display text-[15px] font-bold tracking-[0.2em]">MARS ODYSSEY</div>
               <div className="label !text-[9px]">Jezero Crater · EVA planning prototype</div>
-              {connectionStatus}
+              {simStatus}
             </div>
             <div className="hidden h-8 w-px shrink-0 bg-line-2 lg:block" />
             <div className="hidden shrink-0 font-mono text-[10.5px] leading-tight text-muted lg:block">
@@ -501,10 +744,8 @@ export default function App() {
             aria-label="Show mission info" aria-expanded={false}
             className="glass hud-corners pointer-events-auto flex items-center gap-3 rounded-full py-2.5 pl-5 pr-3 text-muted hover:text-ink fade-in">
             <span className="display text-[16px] font-bold tracking-[0.2em] text-ink">MARS ODYSSEY</span>
-            {([['Planner', connections.planner], ['Rover sim', connections.sim]] as const).map(([name, state]) => (
-              <i key={name} title={`${name}: ${state}`} aria-label={`${name}: ${state}`}
-                className={`h-2.5 w-2.5 rounded-full ${state === 'online' ? 'bg-emerald-400' : state === 'checking' ? 'animate-pulse bg-amber-300' : 'bg-faint'}`} />
-            ))}
+            <i title={`Simulation ${session ? 'running' : 'not running'}`} aria-label={`Simulation ${session ? 'running' : 'not running'}`}
+              className={`h-2.5 w-2.5 rounded-full ${session ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-faint'}`} />
             <span className="grid h-7 w-7 place-items-center rounded-full border border-line-2 text-ink" aria-hidden="true">
               <ChevronDown size={16} />
             </span>
@@ -520,6 +761,7 @@ export default function App() {
         {placeCard}
         {/* items-stretch: the legend takes the dock's width (one right-hand column, with the Copilot). */}
         <div ref={rightDockRef} className="flex flex-col items-stretch gap-2">
+        {agents && <ObjectSelector agents={agents} selected={liveWorld?.selected ?? null} onSelect={selectAgent} onFocus={id => { setTraverseFor(null); selectAgent(id) }} />}
         {(activeRasters.length > 0 || layers.samples) && (
           <div className="glass pointer-events-auto space-y-2.5 rounded-xl p-3 fade-in">
             {activeRasters.slice(-2).map((r) => (
@@ -573,10 +815,10 @@ export default function App() {
       {pickBanner}
 
       <div className="absolute bottom-3 left-3 right-3 z-[1000]">
-        <StatusBar cursor={cursor} info={info} zoom={zoom} apiOk={apiOk} />
+        <StatusBar cursor={demo && telemetry ? { lon: telemetry.lon, lat: telemetry.lat } : cursor} info={demo ? null : info} vehicle={!!(demo && telemetry)} zoom={zoom} apiOk={apiOk} center={<MapLegend visible={visibleTypes} onToggle={toggleType} />} />
       </div>
 
-      <OdysseyCopilot onAction={handleCopilotAction} currentLocation={cursor ?? start ?? LANDING_SITE} />
+      {!demo && <OdysseyCopilot onAction={handleCopilotAction} currentLocation={cursor ?? start ?? LANDING_SITE} />}
 
       {briefing && <Briefing manifest={manifest} nSamples={samples?.features.length ?? 0} onEnter={closeBriefing} />}
     </div>

@@ -1,8 +1,9 @@
-import { Compass, FlaskConical, Info, Layers, Route, ShieldAlert, CloudSun } from 'lucide-react'
+import { Compass, FlaskConical, Info, Layers, MapPin, Route, ShieldAlert, CloudSun } from 'lucide-react'
 import type { Tab } from '../types'
 
 const ITEMS: { id: Tab; label: string; Icon: typeof Compass }[] = [
   { id: 'explorer', label: 'Explorer', Icon: Compass },
+  { id: 'location', label: 'Location', Icon: MapPin },
   { id: 'layers', label: 'Data Layers', Icon: Layers },
   { id: 'weather', label: 'Weather', Icon: CloudSun },
   { id: 'safety', label: 'Safety', Icon: ShieldAlert },

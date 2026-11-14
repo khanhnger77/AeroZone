@@ -21,7 +21,7 @@ export default function DemoControls({ active, config, telemetry: t, speed, warp
     {DEMO_CONTROLS.map(control => <label key={control.type} className="block text-xs text-muted">{control.label}
       <select className="mt-1 block w-full rounded border border-line bg-panel-2 p-2 text-ink" value={control.value}
         onChange={e => onCommand({ type: control.type, value: Number(e.target.value) })}>
-        {control.values.map(v => <option key={v} value={v}>{control.format(v)}</option>)}
+        {(control.values.includes(control.value) ? control.values : [control.value, ...control.values]).map(v => <option key={v} value={v}>{control.format(v)}</option>)}
       </select>
     </label>)}
     {t && <div className="space-y-2 font-mono text-[11px]" aria-live="polite">

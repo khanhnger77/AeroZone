@@ -74,9 +74,9 @@
     /* Embedded in the planner (C7): the app shows its own telemetry. */
     body.embed .standalone { display: none !important; }
     body.embed #telemetry, body.embed #progress { display: none; }
-    body.embed #hud { left: calc(50% + 130px); width: auto; }
+    body.embed #hud { display: none; }   /* the planner shows the view buttons above its lidar panel */
     body.embed #hud .row { margin-top: 0; }
-    body.embed #notes { left: auto; right: 12px; }
+    body.embed #notes { display: none; }
 
     @media (max-width: 640px) {
       #title { display: none; }
@@ -115,7 +115,6 @@
       <button id="btn-reset">Reset</button>
       <select id="sel-speed" title="Vehicle speed (demo acceleration)"></select>
       <select id="sel-warp" title="Sim speed (time warp)"></select>
-      <select id="sel-model" title="Physics model"></select>
     </div>
   </div>
 

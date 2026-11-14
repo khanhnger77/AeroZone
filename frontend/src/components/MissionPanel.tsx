@@ -1,5 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
-import { ArrowRight, Route as RouteIcon } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowRight, Plus, Route as RouteIcon, X } from 'lucide-react'
+import { MARKER_STYLE, OBJECT_KINDS, type ObjectKind } from '../sim/world'
 import type { ConnectionState } from '../useConnections'
 import type { LonLat, RouteResponse } from '../types'
 import { fmtDist, fmtLat, fmtLon } from '../map/geo'
@@ -28,6 +29,19 @@ interface Props {
   route: RouteResponse | null
   selected: string | null
   onSelect: (id: string) => void
+  /** the object driven in the path-traverse demo (fixed for the run) */
+  object: ObjectKind
+  onObject: (k: ObjectKind) => void
+  roverName: string
+  /** a simulation exists (possibly with the 3D view closed): which demo */
+  session: 'path' | 'world' | null
+  onReopen: () => void
+  worldObjects: { kind: ObjectKind; name: string }[]
+  onWorldAdd: (k: ObjectKind) => void
+  onWorldRemove: (index: number) => void
+  worldObstacles: boolean
+  onWorldObstacles: (on: boolean) => void
+  onWorldDemo: () => void
 }
 
 export default function MissionPanel(p: Props) {
@@ -51,6 +65,17 @@ export default function MissionPanel(p: Props) {
     : p.simState === 'offline' ? 'Rover simulation is unavailable. Click the map for Terrain 3D and panorama views.'
     : p.loading ? 'Wait for route calculation to finish.'
     : !p.route ? 'Compute a route before starting the 3D demo.' : null
+  const objectLabel = (k: ObjectKind) => (k === 'rover' ? `${p.roverName} Rover` : 'Astronaut')
+  const pathRunning = p.session === 'path', worldRunning = p.session === 'world'
+  // The two demo sections are collapsed by default; opening one closes the other. A running demo opens.
+  const [openDemo, setOpenDemo] = useState<'path' | 'world' | null>(p.session)
+  useEffect(() => { if (p.session) setOpenDemo(p.session) }, [p.session])
+  const toggleDemo = (k: 'path' | 'world') => setOpenDemo(o => (o === k ? null : k))
+  // Once the path demo has started, only the chosen route is listed.
+  const shown = p.route && pathRunning ? { ...p.route, routes: p.route.routes.filter(r => r.id === (p.selected ?? p.route!.recommended)) } : p.route
+  const worldReason = p.demoLoading ? 'Preparing the 3D scene…'
+    : p.simState !== 'online' ? 'The 3D simulation is unavailable.'
+    : p.worldObjects.length === 0 ? 'Add at least one object.' : null
   const pt = (v: LonLat | null) => (v ? `${fmtLat(v.lat)} ${fmtLon(v.lon)}` : 'not set')
   const sel = p.route?.routes.find((r) => r.id === (p.selected ?? p.route?.recommended))
   return (
@@ -100,7 +125,7 @@ export default function MissionPanel(p: Props) {
         <>
           <div ref={comparison} className="scroll-mt-3" aria-label="Route comparison">
           <Section title="2 · Compare alternatives" right={<span className="text-[10px] text-muted">straight line {fmtDist(p.route.straight_line_m)}</span>}>
-            <RouteComparison response={p.route} selected={p.selected} disabled={locked || p.loading} onSelect={p.onSelect} />
+            <RouteComparison response={shown!} selected={p.selected} disabled={locked || p.loading} onSelect={p.onSelect} />
           </Section>
           </div>
 
@@ -135,21 +160,60 @@ export default function MissionPanel(p: Props) {
         </>
       )}
 
-      <Section title="Rover drive demo" right={<span className={`tag ${p.demoActive || p.simState === 'online' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-panel-2 text-muted'}`}>{p.demoActive ? 'Running' : p.simState === 'online' ? 'Available' : p.simState === 'checking' ? 'Checking' : 'Unavailable'}</span>}>
+      <Section title="Path traverse demo" open={openDemo === 'path'} onToggle={() => toggleDemo('path')} right={<span className={`tag ${pathRunning || p.simState === 'online' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-panel-2 text-muted'}`}>{pathRunning ? 'Running' : p.simState === 'online' ? 'Available' : p.simState === 'checking' ? 'Checking' : 'Unavailable'}</span>}>
         <label className="mt-1 flex items-center justify-between gap-2 text-xs">
           Randomly generate obstacles
           <input type="checkbox" role="switch" aria-label="Randomly generate obstacles" checked={p.obstaclesOn} disabled={locked || p.simState !== 'online'} onChange={e => p.onObstacles(e.target.checked)} />
         </label>
-        <button aria-label={p.demoActive ? 'Exit 3D demo' : 'Run demo'} aria-describedby={demoReason ? 'demo-help' : undefined} disabled={!!demoReason} onClick={p.onDemo} className="btn-primary mt-3 w-full shadow-lg shadow-orange-500/20">
-          {p.demoLoading ? 'Loading demo…' : p.demoActive ? 'Exit 3D demo' : 'Run demo'}
+        <label className="mt-2 block text-xs text-muted">Object
+          <select aria-label="Object" value={p.object} disabled={locked || pathRunning} onChange={e => p.onObject(e.target.value as ObjectKind)}
+            className="mt-1 block w-full rounded border border-line bg-panel-2 p-2 text-ink">
+            {OBJECT_KINDS.map(k => <option key={k} value={k}>{objectLabel(k)}</option>)}
+          </select>
+        </label>
+        {pathRunning && <p className="mt-1 text-[10.5px] text-muted">The object is fixed while the simulation runs. End the simulation to change it.</p>}
+        <button aria-label={p.demoActive && pathRunning ? 'Exit simulation' : pathRunning ? 'Open 3D view' : 'Run demo'} aria-describedby={demoReason && !pathRunning ? 'demo-help' : undefined}
+          disabled={!!demoReason && !pathRunning} onClick={pathRunning && !p.demoActive ? p.onReopen : p.onDemo} className="btn-primary mt-3 w-full shadow-lg shadow-orange-500/20">
+          {p.demoLoading ? 'Loading demo…' : p.demoActive && pathRunning ? 'Exit simulation' : pathRunning ? 'Open 3D view' : 'Run demo'}
         </button>
-        {demoReason && <p id="demo-help" role="status" className="mt-2 text-[11px] leading-relaxed text-muted">{demoReason}</p>}
+        {demoReason && !pathRunning && <p id="demo-help" role="status" className="mt-2 text-[11px] leading-relaxed text-muted">{demoReason}</p>}
         {p.demoError && <p role="alert" className="mt-2 text-xs text-red-300">{p.demoError}</p>}
-        {p.demoActive ? p.demoControls : <details className="mt-3 rounded-lg border border-line px-3">
+        {p.demoActive && pathRunning ? p.demoControls : <details className="mt-3 rounded-lg border border-line px-3">
           <summary className="cursor-pointer py-2 text-xs text-muted">Preview demo controls</summary>
           <p className="text-[11px] leading-relaxed text-muted">Drive, pause, speed and live telemetry become available after the 3D demo starts.</p>
           {p.demoControls}
         </details>}
+      </Section>
+
+      <Section title="World demo" open={openDemo === 'world'} onToggle={() => toggleDemo('world')} right={<span className={`tag ${worldRunning ? 'bg-emerald-400/10 text-emerald-300' : 'bg-panel-2 text-muted'}`}>{worldRunning ? 'Running' : 'Not running'}</span>}>
+        <p className="text-[11px] leading-relaxed text-muted">Several objects roam the whole crater at their own speeds. The demo opens on the whole-AOI view: pick an object to ride along and drive it.</p>
+        <div className="mt-2 flex gap-2">
+          {OBJECT_KINDS.map(k => {
+            const { Icon, color } = MARKER_STYLE[k]
+            return <button key={k} type="button" disabled={worldRunning || p.demoLoading || p.worldObjects.length >= 40} onClick={() => p.onWorldAdd(k)} className="btn-ghost flex-1 !py-1.5 text-[11px]">
+              <Plus size={12} aria-hidden="true" /><Icon size={12} style={{ color }} />{k === 'rover' ? 'Rover' : 'Astronaut'}
+            </button>
+          })}
+        </div>
+        <ul className="mt-2 flex flex-wrap gap-1" aria-label="World objects">
+          {p.worldObjects.map((o, i) => {
+            const { Icon, color } = MARKER_STYLE[o.kind]
+            return <li key={o.name} className="flex items-center gap-1 rounded-full border border-line py-0.5 pl-2 pr-1 text-[10.5px]">
+              <Icon size={11} style={{ color }} />{o.name}
+              <button type="button" disabled={worldRunning} onClick={() => p.onWorldRemove(i)} aria-label={`Remove ${o.name}`} className="text-muted hover:text-red-300 disabled:opacity-30"><X size={11} /></button>
+            </li>
+          })}
+          {p.worldObjects.length === 0 && <li className="text-[11px] text-muted">No objects yet.</li>}
+        </ul>
+        <label className="mt-2 flex items-center justify-between gap-2 text-xs">
+          Random obstacles (sparse, whole map)
+          <input type="checkbox" role="switch" aria-label="World obstacles" checked={p.worldObstacles} disabled={worldRunning || p.demoLoading} onChange={e => p.onWorldObstacles(e.target.checked)} />
+        </label>
+        <button type="button" disabled={!worldRunning && !!worldReason} onClick={worldRunning && !p.demoActive ? p.onReopen : p.onWorldDemo} className="btn-primary mt-3 w-full">
+          {p.demoLoading ? 'Loading…' : p.demoActive && worldRunning ? 'Exit simulation' : worldRunning ? 'Open 3D view' : 'Run world demo'}
+        </button>
+        {!worldRunning && worldReason && <p role="status" className="mt-2 text-[11px] text-muted">{worldReason}</p>}
+        {worldRunning && p.demoActive && p.demoControls}
       </Section>
 
     </div>

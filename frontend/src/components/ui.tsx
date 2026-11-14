@@ -1,14 +1,18 @@
 import type { ReactNode } from 'react'
 import type { DataCategory, RasterLayer } from '../types'
 
-export function Section({ title, children, right, icon }: { title: string; children: ReactNode; right?: ReactNode; icon?: ReactNode }) {
+/** Panel section. With `onToggle` it collapses: the title row becomes a button and `open` shows the body. */
+export function Section({ title, children, right, icon, open = true, onToggle }: { title: string; children: ReactNode; right?: ReactNode; icon?: ReactNode; open?: boolean; onToggle?: () => void }) {
   return (
     <section className="border-b border-line/70 px-5 py-4 last:border-b-0">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="label flex items-center gap-1.5">{icon}{title}</h3>
+      <div className={`flex items-center justify-between gap-2 ${open ? 'mb-3' : ''}`}>
+        {onToggle
+          ? <button type="button" onClick={onToggle} aria-expanded={open} className="label flex items-center gap-1.5 hover:text-ink">
+              <span aria-hidden="true" className={`inline-block transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>{icon}{title}</button>
+          : <h3 className="label flex items-center gap-1.5">{icon}{title}</h3>}
         {right}
       </div>
-      {children}
+      {open && children}
     </section>
   )
 }

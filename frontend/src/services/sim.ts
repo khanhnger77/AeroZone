@@ -1,4 +1,5 @@
 import type { LonLat, Route, RouteResponse } from '../types'
+import type { WorldState } from '../sim/world'
 
 export const SIM_BASE = '/sim/'
 export interface SimNav {
@@ -25,11 +26,19 @@ export interface SimControlsConfig {
   warps: number[]; models: string[]
 }
 export type SimCommand = { type: 'start' | 'pause' | 'reset' }
+  | { type: 'set_speed'; value: number; agent?: string }
   | { type: 'set_speed' | 'set_warp'; value: number }
   | { type: 'set_model'; value: 'wheeled' | 'kinematic' }
-export interface SimConfig { protocol: 'mo-sim/1'; controls: SimControlsConfig }
+  | { type: 'end' }
+  | { type: 'select'; agent: string; manual?: boolean }
+  | { type: 'drive'; v: number; w: number }
+  | { type: 'goto'; agent?: string; lon: number; lat: number; route?: string }
+  | { type: 'intercept'; agent?: string; target: string }
+export interface SimConfig { protocol: 'mo-sim/1'; controls: SimControlsConfig; rover?: { name: string } }
 export interface SimMission {
   id: string
+  kind?: 'world'
+  world?: WorldState
   obstacles: { enabled: boolean; seed: number; count: number; rocks: SimRock[]; craters: SimCrater[] }
 }
 const UNREACHABLE = 'Sim server not reachable on :8100. Start it with `pixi run sim` (or `pixi run demo`).'
@@ -50,14 +59,17 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 export const simConfig = () => request<SimConfig>('config')
 const missionRoute = ({ id, label, color, length_m, coordinates }: Route) => ({ id, label, color, length_m, coordinates })
-export function loadSimMission(response: RouteResponse, selectedId: string, obstacles: { enabled: boolean; seed?: number }) {
+export function loadSimMission(response: RouteResponse, selectedId: string, obstacles: { enabled: boolean; seed?: number }, object?: 'rover' | 'astronaut') {
   const route = response.routes.find(r => r.id === selectedId)
   if (!route || route.coordinates.length < 2) throw new Error('Select a valid route first.')
   const [lon, lat] = route.coordinates[0]
   const [endLon, endLat] = route.coordinates[route.coordinates.length - 1]
   return request<SimMission>('api/mission', {
     route: missionRoute(route), alternatives: response.routes.filter(r => r.id !== selectedId).map(missionRoute),
-    start: { lon, lat }, end: { lon: endLon, lat: endLat }, obstacles,
+    start: { lon, lat }, end: { lon: endLon, lat: endLat }, obstacles, object,
   })
 }
+/** World demo: several objects on the whole AOI (POST /sim/api/world). */
+export const loadSimWorld = (agents: { kind: 'rover' | 'astronaut'; name: string }[], obstacles: { enabled: boolean; seed?: number }) =>
+  request<SimMission>('api/world', { agents, obstacles })
 export const simCommand = (command: SimCommand) => request<{ ok: boolean }>('api/command', command)

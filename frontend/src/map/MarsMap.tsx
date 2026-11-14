@@ -5,10 +5,12 @@ import {
 } from 'react-leaflet'
 import type { FC, LayersManifest, LonLat, MapViewport, ProfilePoint, RouteResponse, SampleProps } from '../types'
 import { TREK_ATTRIB, TREK_LAYERS, trekUrl } from './trek'
-import { LANDING_SITE } from './geo'
+import { LANDING_SITE, haversineM } from './geo'
 import type { SelectedPlace } from '../components/PlaceCard'
 import { PANORAMAS } from '../data/panoramas'
 import type { SimRock, SimCrater, SimTelemetry } from '../services/sim'
+import type { MapLocation, MarkerType, WorldAgent } from '../sim/world'
+import { markerIcon } from './markers'
 
 export interface MapLayerState {
   base: string
@@ -49,6 +51,19 @@ interface Props {
   onMapClick: (p: LonLat) => void
   onSampleClick: (no: number) => void
   onWaypointClick?: (sol: number) => void
+  /** user locations (Location tab) and live sim objects, filtered by the legend toggles */
+  locations?: MapLocation[]
+  agents?: WorldAgent[] | null
+  visibleTypes?: Record<MarkerType, boolean>
+  highlight?: { kind: 'location' | 'agent'; id: string } | null
+  selectedAgent?: string | null
+  onLocationClick?: (id: string) => void
+  onLocationMove?: (id: string, p: LonLat) => void
+  onAgentClick?: (id: string) => void
+  /** keep this point centred (a tracked object) */
+  follow?: LonLat | null
+  /** tracking minimap: keep the rover arrow centred (button on the minimap) */
+  trackLock?: boolean
 }
 
 /**
@@ -59,7 +74,7 @@ interface Props {
  * 1/cos(lat) wider than a north step; the drawn direction is (cos ψ / cos φ, sin ψ). Screen y
  * grows downwards, hence the minus sign.
  */
-function roverScreenAngleDeg(yawDeg: number, latDeg: number): number {
+export function roverScreenAngleDeg(yawDeg: number, latDeg: number): number {
   const psi = (yawDeg * Math.PI) / 180
   const k = Math.cos((latDeg * Math.PI) / 180)
   return (-Math.atan2(Math.sin(psi), Math.cos(psi) / k) * 180) / Math.PI
@@ -118,7 +133,14 @@ export const ROCK_COLORS: [string, string][] = [
 ]
 export const sampleColor = (rock: string) => ROCK_COLORS.find(([k]) => rock.startsWith(k))?.[1] ?? '#facc15'
 
-const pinIcon = (color: string, sel: boolean) =>
+/** Cached: a new icon object per render would replace the pin element and leave its tooltip open. */
+const pinCache = new Map<string, L.DivIcon>()
+const pinIcon = (color: string, sel: boolean) => {
+  const key = color + sel
+  if (!pinCache.has(key)) pinCache.set(key, makePin(color, sel))
+  return pinCache.get(key)!
+}
+const makePin = (color: string, sel: boolean) =>
   L.divIcon({
     className: '',
     iconSize: [22, 22],
@@ -240,10 +262,33 @@ export default function MarsMap(p: Props) {
             pathOptions={{ color: '#5ee6ff', weight: 2, fillColor: '#5ee6ff', fillOpacity: 0.35 }} interactive={false} />
         )}
 
-        {p.rocks?.map(rock => <CircleMarker key={rock.id} center={[rock.lat, rock.lon]} radius={3} pathOptions={{ color: '#f87171', fillOpacity: 1 }} />)}
-        {p.craters?.map(crater => <CircleMarker key={crater.id} center={[crater.lat, crater.lon]} radius={5} pathOptions={{ color: '#fb923c', fillOpacity: 0.4 }} />)}
         {p.rover && <Marker position={[p.rover.lat, p.rover.lon]} zIndexOffset={3000} icon={L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div style="color:#5ee6ff;font-size:22px;line-height:22px;text-align:center;transform:rotate(${roverScreenAngleDeg(p.rover.yaw_deg, p.rover.lat)}deg)">➤</div>` })} />}
-        <TrackingMode tracking={!!p.tracking} rover={p.rover} route={p.route?.routes.find(r => r.id === selId)?.coordinates} />
+        {p.locations?.filter(l => p.visibleTypes?.[l.type] !== false).map(l => {
+          const hl = p.highlight?.kind === 'location' && p.highlight.id === l.id
+          return <LocationMarker key={l.id} loc={l} highlight={hl} draggable={!p.tracking} onClick={p.onLocationClick} onMove={p.onLocationMove} />
+        })}
+        {/* mission path of the focused / selected object, dotted */}
+        {p.agents?.filter(a => a.path && a.path.length > 1 && (a.id === p.selectedAgent || (p.highlight?.kind === 'agent' && p.highlight.id === a.id))).map(a =>
+          <Polyline key={`path-${a.id}`} positions={a.path!.map(([lon, lat]) => [lat, lon] as [number, number])} interactive={false}
+            pathOptions={{ color: '#ffffff', weight: 2.5, opacity: 0.9, dashArray: '2 7', lineCap: 'round' }} />)}
+        {/* a travel target that is a plain map point (not a location): green dot named Target */}
+        {p.agents?.filter(a => a.mode === 'goto' && a.goal && a.path && a.path.length > 1
+          && (a.id === p.selectedAgent || (p.highlight?.kind === 'agent' && p.highlight.id === a.id))
+          && !p.locations?.some(l => haversineM(l.lon, l.lat, a.goal!.lon, a.goal!.lat) < 10)).map(a =>
+          <CircleMarker key={`target-${a.id}`} center={[a.goal!.lat, a.goal!.lon]} radius={6} interactive={false}
+            pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+            <Tooltip className="mo-flag" permanent direction="top" offset={[0, -8]}>Target</Tooltip>
+          </CircleMarker>)}
+        {/* in the 3D view the selected object is the arrow; its type icon is not repeated */}
+        {p.agents?.filter(a => p.visibleTypes?.[a.kind] !== false && !(p.tracking && a.id === p.selectedAgent)).map(a => {
+          const hl = p.highlight?.kind === 'agent' && p.highlight.id === a.id
+          return <Marker key={a.id} position={[a.lat, a.lon]} zIndexOffset={hl ? 3200 : 2900}
+            icon={markerIcon(a.kind, { name: a.name, highlight: hl, selected: a.id === p.selectedAgent,
+              arrowDeg: hl ? roverScreenAngleDeg(a.yaw_deg, a.lat) : null, speed: a.speed_m_s })}
+            eventHandlers={{ click: e => { L.DomEvent.stopPropagation(e); p.onAgentClick?.(a.id) } }} />
+        })}
+        {!p.tracking && <Follow point={p.follow ?? null} />}
+        <TrackingMode tracking={!!p.tracking} lock={!!p.trackLock} rover={p.rover} route={p.route?.routes.find(r => r.id === selId)?.coordinates} />
         {p.showPlaces && !p.tracking && PANORAMAS.filter(site => site.id !== 'van-zyl' || p.crisp).map(site => <Marker key={site.id} position={[site.lat, site.lon]} icon={panoramaIcon} zIndexOffset={2500} title={`360° panorama: ${site.name}`} alt={`360° panorama: ${site.name}`} eventHandlers={{ click: () => p.onPanoramaClick?.(site) }}>
           <Tooltip className="mo-tip">{site.name} · panorama sol {site.sols}</Tooltip>
         </Marker>)}
@@ -257,6 +302,35 @@ export default function MarsMap(p: Props) {
       <div className="map-vignette" />
     </div>
   )
+}
+
+/**
+ * A draggable location marker. The position array is memoised on the coordinates: react-leaflet
+ * moves the marker back to `position` whenever it receives a new array, which happened on every
+ * re-render during a drag (cursor read-out, sim updates) and snapped the marker back.
+ */
+function LocationMarker({ loc, highlight, draggable, onClick, onMove }: {
+  loc: MapLocation; highlight: boolean; draggable: boolean
+  onClick?: (id: string) => void; onMove?: (id: string, p: LonLat) => void
+}) {
+  const position = useMemo<[number, number]>(() => [loc.lat, loc.lon], [loc.lat, loc.lon])
+  const handlers = useMemo(() => ({
+    click: (e: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(e); onClick?.(loc.id) },
+    dragend: (e: L.DragEndEvent) => { const ll = (e.target as L.Marker).getLatLng(); onMove?.(loc.id, { lon: ll.lng, lat: ll.lat }) },
+  }), [loc.id, onClick, onMove])
+  return <Marker position={position} draggable={draggable} zIndexOffset={highlight ? 2600 : 2200}
+    icon={markerIcon(loc.type, { name: loc.name, highlight })} eventHandlers={handlers} />
+}
+
+/** Keeps a tracked object centred (pans only when it drifts from the centre). */
+function Follow({ point }: { point: LonLat | null }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!point) return
+    const c = map.latLngToContainerPoint([point.lat, point.lon]), size = map.getSize()
+    if (Math.hypot(c.x - size.x / 2, c.y - size.y / 2) > 2) map.panTo([point.lat, point.lon], { animate: true, duration: 0.25 })
+  }, [point?.lat, point?.lon, map])  // eslint-disable-line react-hooks/exhaustive-deps
+  return null
 }
 
 /** Exposes zoom controls to the HUD outside the MapContainer. */
@@ -276,7 +350,7 @@ function CrispPane({ crisp }: { crisp: boolean }) {
   return null
 }
 
-function TrackingMode({ tracking, rover, route }: { tracking: boolean; rover?: SimTelemetry | null; route?: [number, number][] }) {
+function TrackingMode({ tracking, lock, rover, route }: { tracking: boolean; lock: boolean; rover?: SimTelemetry | null; route?: [number, number][] }) {
   const map = useMap()
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -287,8 +361,8 @@ function TrackingMode({ tracking, rover, route }: { tracking: boolean; rover?: S
   }, [tracking, map, route])
   useEffect(() => {
     if (!tracking || !rover) return
-    const point = map.latLngToContainerPoint([rover.lat, rover.lon]), size = map.getSize()
-    if (point.x < size.x * 0.2 || point.x > size.x * 0.8 || point.y < size.y * 0.2 || point.y > size.y * 0.8) map.panTo([rover.lat, rover.lon], { animate: false })
-  }, [tracking, rover, map])
+    // Tracking button on: keep the arrow centred. Off: leave the map alone (free to drag).
+    if (lock) map.setView([rover.lat, rover.lon], map.getZoom(), { animate: false })
+  }, [tracking, lock, rover, map])
   return null
 }

@@ -30,10 +30,10 @@ function Cell({ k, children, w }: { k: string; children: ReactNode; w?: string }
   )
 }
 
-export default function StatusBar({ cursor, info, zoom, apiOk }: { cursor: LonLat | null; info: PointInfo | null; zoom: number; apiOk: boolean | null }) {
+export default function StatusBar({ cursor, info, zoom, apiOk, center, vehicle = false }: { cursor: LonLat | null; info: PointInfo | null; zoom: number; apiOk: boolean | null; center?: ReactNode; vehicle?: boolean }) {
   const v = (x: number | null | undefined, d = 1) => (x == null ? '—' : x.toFixed(d))
   return (
-    <footer className="glass flex h-10 items-center gap-6 rounded-xl px-4 font-mono text-[11px]">
+    <footer className="glass relative flex h-10 items-center gap-6 rounded-xl px-4 font-mono text-[11px]">
       <Cell k="LAT" w="w-[118px]">{cursor ? fmtLat(cursor.lat) : '—'}</Cell>
       <Cell k="LON" w="w-[118px]">{cursor ? fmtLon(cursor.lon) : '—'}</Cell>
       <div className="h-5 w-px bg-line-2" />
@@ -48,9 +48,11 @@ export default function StatusBar({ cursor, info, zoom, apiOk }: { cursor: LonLa
           </div>
         </>
       ) : (
-        <span className="text-faint">{apiOk === false ? 'terrain readout unavailable · planner offline' : apiOk === null ? 'connecting to planner…' : cursor ? 'outside analysed terrain' : 'hover for terrain · click for 3D / 360°'}</span>
+        <span className="min-w-0 truncate text-faint">{vehicle ? 'vehicle position' : apiOk === false ? 'terrain readout unavailable · planner offline' : apiOk === null ? 'connecting to planner…' : cursor ? 'outside analysed terrain' : 'hover for terrain · click for 3D / 360°'}</span>
       )}
-      <div className="ml-auto flex items-center gap-5 text-muted">
+      {/* map legend sits in the free middle of the bar */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center font-sans"><div className="pointer-events-auto rounded-full bg-[#05070a]/70 px-1">{center}</div></div>
+      <div className="ml-auto flex shrink-0 items-center gap-5 text-muted">
         <ScaleBar zoom={zoom} />
         <span>Z{zoom}</span>
         <span className="flex items-center gap-1.5">

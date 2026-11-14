@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import logging
 import math
@@ -33,6 +34,7 @@ from sim.backend.navigator import PurePursuitNavigator
 from sim.server.physics import RoverModelRouter, euler_from_quat
 from sim.server.terrain import TerrainSource, build_mission_terrain
 from sim.server.textures import TextureService, TextureUnavailable
+from sim.server.world import AUTO_MODES, KINDS, World
 
 try:  # M5 owns this facade; until it exists the sim runs with obstacle avoidance disabled.
     from sim.obstacle_avoid.service import ObstacleAvoidance
@@ -50,6 +52,12 @@ WARP_RANGE = (0.1, 50.0)
 TILT_EVENT_PERIOD_S = 10.0
 DEMO_START = {"lon": 77.45088572, "lat": 18.44462715}   # Perseverance landing site
 DEMO_END = {"lon": 77.3052, "lat": 18.4975}            # Cheyava Falls / sample 25
+WORLD_GRID_POINTS = 1200      # world demo: the whole AOI is the corridor, ~8 m posts
+WORLD_MAX_AGENTS = 40
+WORLD_KM2_PER_ROCK = 0.5      # world demo: random boulders, ~2 per km2 (sparse)
+WORLD_KM2_PER_CRATER = 2.5    # and a crater per 2.5 km2
+WORLD_POST_HZ = 5.0
+DRIVE_TIMEOUT_S = 0.6         # manual drive input expires (released key, lost socket)
 
 # Static trees under /sim (C5). Explicit MIME types: Windows registries often map .js to text/plain,
 # which browsers refuse for ES modules.
@@ -160,6 +168,10 @@ class SimServer:
         self._loop_task: asyncio.Task | None = None
         self._last_tilt_event = -math.inf
         self._background: set[asyncio.Task] = set()
+        self.world: World | None = None         # the objects of the current demo (C5 extension)
+        self._nav_version = -1                  # selected object's path version loaded into nav
+        self._drive = (0.0, 0.0, -math.inf)     # manual (v, w) and its monotonic time
+        self._last_world_post = -math.inf
 
     # ------------------------------------------------------------------------------------ config
     @property
@@ -261,7 +273,10 @@ class SimServer:
         except (TypeError, ValueError):
             raise ValueError("obstacles.seed must be an integer") from None
         coords = route["coordinates"]
-        return {"route": route, "alternatives": alternatives,
+        obj = req.get("object")
+        if obj is not None and obj not in KINDS:
+            raise ValueError(f"object must be one of {list(KINDS)}")
+        return {"route": route, "alternatives": alternatives, "object": obj,
                 "start": self._parse_point(req.get("start"), coords[0], "start"),
                 "end": self._parse_point(req.get("end"), coords[-1], "end"),
                 "obstacles": {"enabled": bool(obst.get("enabled", False)), "seed": seed}}
@@ -284,14 +299,26 @@ class SimServer:
         path_xy = np.column_stack([x, y])
         obst = req["obstacles"]
 
+        self.world = None
         self.avoid.setup(obst["enabled"], obst["seed"], path_xy, corridor, self.router.world)
         self.router.set_terrain(corridor)          # after carving, so collider == served mesh
+        if req.get("object"):                      # chosen before the run; fixed for the mission
+            self.router.set_model(self._model_for(req["object"]))
         self.frame, self.path_xy = frame, path_xy
         self.grids = {"corridor": corridor, "context": context}
         self.terrain_bytes = {k: g.h.astype("<f4", copy=False).tobytes() for k, g in self.grids.items()}
         self.nav.load_path(path_xy)
         self.warp = 1.0
         self._spawn()                               # spawn + avoid.reset()
+        # The path-traverse demo is a one-object world: the map shows it, and it can be sent elsewhere.
+        kind = req.get("object") or ("astronaut" if self.router.active.name == "astronaut" else "rover")
+        self.world = World(corridor, frame, obstacles=self._obstacle_discs(), seed=obst["seed"])
+        ahead = path_xy[min(3, len(path_xy) - 1)] - path_xy[0]
+        agent = self.world.add(kind, path_xy[0, 0], path_xy[0, 1], math.atan2(ahead[1], ahead[0]),
+                               name=self.rover_cfg["name"] if kind == "rover" else "Astronaut_1",
+                               cruise=self.nav.cruise, mode="route")
+        agent.path = path_xy
+        self._nav_version = agent.path_version
 
         seg = np.hypot(*np.diff(path_xy, axis=0).T)
         length = route["length_m"] if route["length_m"] is not None else float(seg.sum())
@@ -319,6 +346,7 @@ class SimServer:
             "terrain": {k: g.describe() for k, g in self.grids.items()},
             "obstacles": obstacles,
             "physics": self.router.describe(),     # active model, collider self-test, degradation
+            "world": self.world.describe(),
         }
         col = self.router.collider
         log.info("mission %s: route %s %.0f m, corridor %dx%d, obstacles %s, model %s%s",
@@ -331,14 +359,234 @@ class SimServer:
                                                "mission": self.mission["id"]}, "events"))
         return self.mission
 
+    def _model_for(self, kind: str) -> str:
+        """Router model that carries an object type: the astronaut walker, or the rover."""
+        avail = self.router.available
+        if kind == "astronaut" and "astronaut" in avail:
+            return "astronaut"
+        return "wheeled" if "wheeled" in avail else "kinematic"
+
+    def _obstacle_discs(self) -> list[tuple[float, float, float]]:
+        return ([(r.x, r.y, r.radius) for r in getattr(self.avoid, "rocks", [])]
+                + [(c.x, c.y, c.radius) for c in getattr(self.avoid, "craters", [])])
+
+    # ------------------------------------------------------------------------------------ world demo
+    def parse_world(self, req) -> dict:
+        """Validate a world-demo request: ``{agents: [{kind, name?}], obstacles: {enabled, seed}}``."""
+        if not isinstance(req, dict):
+            raise ValueError("world request must be a JSON object")
+        agents = req.get("agents")
+        if not isinstance(agents, list) or not 1 <= len(agents) <= WORLD_MAX_AGENTS:
+            raise ValueError(f"agents must be a list of 1..{WORLD_MAX_AGENTS} objects")
+        out = []
+        for i, a in enumerate(agents):
+            kind = a.get("kind") if isinstance(a, dict) else None
+            if kind not in KINDS:
+                raise ValueError(f"agents[{i}].kind must be one of {list(KINDS)}")
+            name = a.get("name")
+            out.append({"kind": kind, "name": str(name)[:40] if name else None})
+        obst = req.get("obstacles") or {}
+        if not isinstance(obst, dict):
+            raise ValueError("obstacles must be an object")
+        try:
+            seed = int(obst["seed"]) if obst.get("seed") is not None else secrets.randbelow(2 ** 31)
+        except (TypeError, ValueError):
+            raise ValueError("obstacles.seed must be an integer") from None
+        return {"agents": out, "obstacles": {"enabled": bool(obst.get("enabled", False)), "seed": seed}}
+
+    async def build_world(self, raw_req) -> dict:
+        """World demo: the whole AOI as the drive grid, sparse map-wide obstacles, many objects."""
+        req = self.parse_world(raw_req)
+        async with self._build_lock:
+            src = self._terrain_source()
+            w, e, s, n = src.aoi_lonlat()
+            inset = 1e-4
+            coords = [[w + inset, s + inset], [e - inset, n - inset]]
+            cfg = copy.deepcopy(self.physics_cfg)
+            cfg["terrain"]["max_grid_points"] = min(int(cfg["terrain"]["max_grid_points"]), WORLD_GRID_POINTS)
+            cfg["terrain"]["corridor_margin_m"] = 0.0
+            loop = asyncio.get_running_loop()
+            frame, corridor, context = await loop.run_in_executor(
+                None, build_mission_terrain, src, coords, cfg)
+            return self._install_world(req, frame, corridor, context)
+
+    def _random_obstacles(self, corridor, seed: int):
+        """World demo obstacles: boulders and craters scattered uniformly at random over the AOI
+        (not along any path), sparse, and never stacked on one another."""
+        from sim.obstacle_avoid import craters as craters_mod, obstacles as obstacles_mod
+        cfg = self.avoid.cfg
+        oc, cc = cfg["obstacles"], cfg["craters"]
+        rng = np.random.default_rng(seed)
+        x0, x1, y0, y1 = corridor.extent()
+        area_km2 = (x1 - x0) * (y1 - y0) / 1e6
+        m = 100.0
+        craters = []
+        for k in range(int(area_km2 / WORLD_KM2_PER_CRATER)):
+            r = float(rng.uniform(*cc["radius_m"]))
+            x, y = float(rng.uniform(x0 + m, x1 - m)), float(rng.uniform(y0 + m, y1 - m))
+            if any(math.hypot(x - c.x, y - c.y) < 4 * (r + c.radius) for c in craters):
+                continue
+            craters.append(craters_mod.Crater(id=f"c{k}", x=x, y=y, radius=r,
+                                              depth=r * float(rng.uniform(*cc["depth_ratio"])),
+                                              rim=r * float(rng.uniform(*cc["rim_ratio"])), s_route=0.0))
+        rocks = []
+        for k in range(int(area_km2 / WORLD_KM2_PER_ROCK)):
+            r = float(rng.uniform(*oc["radius_m"]))
+            h = r * float(rng.uniform(*oc["height_ratio"]))
+            v, f = obstacles_mod.make_rock_shape(r, h, rng)
+            x, y = float(rng.uniform(x0 + m, x1 - m)), float(rng.uniform(y0 + m, y1 - m))
+            if any(math.hypot(x - c.x, y - c.y) < 3 * c.radius + 5 for c in craters) \
+                    or any(math.hypot(x - o.x, y - o.y) < 40 for o in rocks):
+                continue
+            rocks.append(obstacles_mod.Rock(
+                id=f"r{len(rocks)}", x=x, y=y, z=float(corridor.height_at(x, y)) - oc["bury_fraction"] * h,
+                yaw=float(rng.uniform(0, 2 * math.pi)), radius=float(np.hypot(v[:, 0], v[:, 1]).max()),
+                height=h, s=0.0, v_local=v, f=f))
+        return rocks, craters
+
+    def _install_world(self, req: dict, frame, corridor, context) -> dict:
+        x0, x1, y0, y1 = corridor.extent()
+        track = np.array([[x0, y0], [x1, y1]], dtype=np.float64)   # M5 needs a path; unused here
+        obst = req["obstacles"]
+
+        self.world = None
+        if obst["enabled"] and isinstance(getattr(self.avoid, "cfg", None), dict):
+            rocks, craters = self._random_obstacles(corridor, obst["seed"])
+        else:
+            rocks, craters = [], []      # no obstacles, but the lidar still scans the terrain
+        self.avoid.setup(ObstacleAvoidance is not None, obst["seed"], track, corridor,
+                         self.router.world, rocks=rocks, craters=craters)
+        self.router.set_terrain(corridor)
+        self.frame, self.path_xy = frame, None
+        self.grids = {"corridor": corridor, "context": context}
+        self.terrain_bytes = {k: g.h.astype("<f4", copy=False).tobytes() for k, g in self.grids.items()}
+        self.warp = 1.0
+
+        world = World(corridor, frame, obstacles=self._obstacle_discs(), seed=obst["seed"])
+        cx, cy = frame.to_local(DEMO_START["lon"], DEMO_START["lat"])
+        for spec in req["agents"]:
+            world.spawn_random(spec["kind"], (float(cx), float(cy)), name=spec["name"])
+        self.world = world
+        self._bind_selected(world.selected)
+        self._spawn_world_selected()
+
+        obstacles = {"enabled": False, "seed": obst["seed"], "count": 0, "rocks": [], "craters": [],
+                     "lidar": self._lidar_desc(), "planner": self._planner_name()}
+        obstacles.update(self.avoid.describe(frame) or {})
+        obstacles["enabled"] = bool(obstacles.get("enabled", False))
+        land = {"lon": DEMO_START["lon"], "lat": DEMO_START["lat"]}
+        self.mission = {
+            "id": secrets.token_hex(5),
+            "kind": "world",
+            "frame": frame.describe(),
+            "route": {"id": "world", "label": "World demo", "color": "#94a3b8", "length_m": 0.0, "xy": []},
+            "alternatives": [], "start": land, "end": land,
+            "terrain": {k: g.describe() for k, g in self.grids.items()},
+            "obstacles": obstacles,
+            "physics": self.router.describe(),
+            "world": world.describe(),
+        }
+        log.info("world %s: %d objects, grid %dx%d, %d rocks, %d craters", self.mission["id"],
+                 len(world.agents), corridor.nx, corridor.ny, len(obstacles["rocks"]),
+                 len(obstacles["craters"]))
+        self._spawn_background(self._warm_textures(self.mission["id"]))
+        self._spawn_background(self.broadcast({"type": "mission_loaded",
+                                               "mission": self.mission["id"]}, "events"))
+        return self.mission
+
+    def _bind_selected(self, agent_id: str) -> None:
+        """Put the physics router on ``agent_id`` (its model and pose); the old object goes kinematic."""
+        w = self.world
+        a = w.agents[agent_id]
+        old = w.sel
+        if old is not None and old.id != agent_id and old.mode == "manual":
+            w.set_mode(old, "idle")
+        w.selected = agent_id
+        self.router.set_model(self._model_for(a.kind))
+        self.router.spawn(a.x, a.y, a.yaw)
+        self.nav.set_cruise(a.cruise)               # its own speed (object speed control)
+        self._nav_version = -1                      # reload nav from the new object's path
+        self.avoid.reset()
+
+    def _spawn_world_selected(self) -> None:
+        a = self.world.sel
+        if a is not None and a.path is not None:
+            self.nav.load_path(a.path)
+            self._nav_version = a.path_version
+
+    def _world_mode(self) -> bool:
+        return bool(self.mission and self.mission.get("kind") == "world")
+
+    async def _plan_agent(self, agent_id: str, version: int) -> None:
+        """Refine a goto with the M2 hazard-aware planner (slope, roughness, hazard); keep the
+        straight line if the planner is unavailable."""
+        w, mission = self.world, self.mission_id
+        a = w.agents.get(agent_id) if w else None
+        if a is None or a.goal is None:
+            return
+        slon, slat = self.frame.to_lonlat(a.x, a.y)
+        elon, elat = self.frame.to_lonlat(*a.goal)
+        body = {"start": {"lon": float(slon), "lat": float(slat)}, "end": {"lon": float(elon), "lat": float(elat)}}
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=90)) as http:
+                async with http.post(f"{self.planner_url}/api/route", json=body) as resp:
+                    if resp.status != 200:
+                        return
+                    data = await resp.json(content_type=None)
+        except Exception as exc:                    # planner offline: straight line stays
+            log.info("goto %s: planner unavailable (%s); driving straight", agent_id, exc)
+            return
+        routes = data.get("routes") or []
+        want = a.route_pref or data.get("recommended")      # "cautious" for a location goal
+        chosen = next((r for r in routes if r.get("id") == want), None) \
+            or next((r for r in routes if r.get("id") == data.get("recommended")), routes[0] if routes else None)
+        if (chosen is None or self.mission_id != mission or self.world is not w
+                or a.path_version != version or a.mode != "goto"):
+            return
+        pts = np.asarray(chosen.get("coordinates") or [], dtype=np.float64)
+        if pts.ndim != 2 or len(pts) < 2:
+            return
+        x, y = self.frame.to_local(pts[:, 0], pts[:, 1])
+        xy = np.column_stack([x, y])
+        # The planner snaps its route ends to its analysis grid (cells of several metres), so the route
+        # can stop short of the chosen point: finish on the exact goal.
+        if np.hypot(*(xy[-1] - a.goal)) > 0.5:
+            xy = np.vstack([xy, a.goal])
+        a.set_path(xy)
+
+    def _agent_arg(self, cmd: dict):
+        w = self.world
+        aid = cmd.get("agent") or (w.selected if w else None)
+        if w is None or aid not in w.agents:
+            raise KeyError("agent")
+        return w.agents[aid]
+
+    def _end(self) -> None:
+        """End the simulation completely: no mission, no objects (the map icons disappear)."""
+        self.nav.pause()
+        self.mission = None
+        self.world = None
+        self._spawn_background(self.broadcast({"type": "mission_ended"}, "events"))
+
     def _spawn(self) -> None:
         """Respawn at the route start facing path point 3, reload the path, reset avoidance."""
+        if self.world is not None and self._world_mode():
+            self.world.reset()
+            a = self.world.sel
+            self.router.spawn(a.x, a.y, a.yaw)
+            self._spawn_world_selected()
+            self.avoid.reset()
+            return
         xy = self.path_xy
         ahead = xy[min(3, len(xy) - 1)] - xy[0]
         yaw = math.atan2(ahead[1], ahead[0])
         self.router.spawn(float(xy[0, 0]), float(xy[0, 1]), yaw)
         self.nav.load_path(xy)
         self.avoid.reset()
+        if self.world is not None and self.world.sel is not None:   # back onto the route
+            self.world.reset()
+            self.world.sel.path = xy
+            self._nav_version = self.world.sel.path_version
 
     def _texture_edges(self, level: str) -> tuple[float, float, float, float]:
         g = self.grids[level]
@@ -392,34 +640,93 @@ class SimServer:
         if not isinstance(cmd, dict) or "type" not in cmd:
             return {"ok": False, "error": "command must be an object with a type"}
         kind = cmd["type"]
+        w = self.world
         try:
-            if kind in ("start", "pause", "reset") and self.mission is None:
+            if kind in ("start", "pause", "reset", "select", "drive", "goto", "intercept", "end") \
+                    and self.mission is None:
                 return {"ok": False, "error": "no mission loaded"}
             if kind == "start":
                 self.nav.start()
+                if w is not None:
+                    w.running = True
             elif kind == "pause":
                 self.nav.pause()
+                if w is not None:
+                    w.running = False
             elif kind == "reset":
                 self._spawn()
+            elif kind == "end":
+                self._end()
+                return {"ok": True, "state": "ended", "warp": self.warp, "model": self.router.active.name}
+            elif kind == "select":
+                a = self._agent_arg(cmd)
+                if a.id != w.selected:
+                    self._bind_selected(a.id)
+                if cmd.get("manual") and self._world_mode():
+                    w.set_mode(a, "manual")
+                    self._drive = (0.0, 0.0, -math.inf)
+            elif kind == "drive":
+                if not self._world_mode():         # manual control is a world-demo feature
+                    return {"ok": False, "error": "manual control is only available in the world demo"}
+                a = w.sel if w else None
+                if a is None:
+                    return {"ok": False, "error": "no selected object"}
+                v, om = float(cmd.get("v", 0.0)), float(cmd.get("w", 0.0))
+                if not (math.isfinite(v) and math.isfinite(om)):
+                    return {"ok": False, "error": "drive needs finite v and w"}
+                if a.mode != "manual":
+                    w.set_mode(a, "manual")
+                vmax = 2.0 if a.kind == "rover" else 1.2
+                wmax = 0.6 if a.kind == "rover" else 1.5
+                self._drive = (max(-1.0, min(1.0, v)) * vmax, max(-1.0, min(1.0, om)) * wmax,
+                               time.monotonic())
+            elif kind in ("goto", "intercept"):
+                a = self._agent_arg(cmd)
+                if kind == "goto":
+                    lon, lat = float(cmd["lon"]), float(cmd["lat"])
+                    if not (math.isfinite(lon) and math.isfinite(lat)):
+                        raise ValueError
+                    x, y = self.frame.to_local(lon, lat)
+                    route = cmd.get("route")
+                    w.assign_goto(a.id, float(x), float(y), route=str(route) if route else None)
+                    self._spawn_background(self._plan_agent(a.id, a.path_version))
+                else:
+                    w.assign_intercept(a.id, str(cmd["target"]))
+                w.running = True
+                if self.nav.state == "paused":
+                    self.nav.start()
             elif kind == "set_speed":
                 v = float(cmd["value"])
                 if not math.isfinite(v) or v < 0:
                     return {"ok": False, "error": "speed must be a non-negative number (m/s)"}
-                self.nav.set_cruise(v)
+                # Optional "agent": set that object's speed (the map popup); default: the selected one.
+                target = w.agents.get(cmd.get("agent") or w.selected) if w is not None else None
+                if cmd.get("agent") and target is None:
+                    return {"ok": False, "error": "unknown agent"}
+                if target is None or target.id == w.selected:
+                    self.nav.set_cruise(v)
+                if target is not None:
+                    target.cruise = v                 # kept when the object is deselected
             elif kind == "set_warp":
-                w = float(cmd["value"])
-                if not math.isfinite(w):
+                wv = float(cmd["value"])
+                if not math.isfinite(wv):
                     return {"ok": False, "error": "warp must be a number"}
-                self.warp = min(max(w, WARP_RANGE[0]), WARP_RANGE[1])
+                self.warp = min(max(wv, WARP_RANGE[0]), WARP_RANGE[1])
             elif kind == "set_model":
+                # The object is chosen before the run: no switching mid-simulation.
+                if self._world_mode() or self.nav.state in ("driving", "paused"):
+                    return {"ok": False, "error": "the object cannot be changed during a simulation"}
                 if not self.router.set_model(str(cmd["value"])):
                     return {"ok": False, "error": f"unknown or unavailable model {cmd['value']!r}"}
             else:
                 return {"ok": False, "error": f"unknown command type {kind!r}"}
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError) as exc:
+            if kind in ("select", "goto", "intercept"):
+                return {"ok": False, "error": f"{kind}: {exc}" if isinstance(exc, ValueError) and str(exc)
+                        else f"{kind} needs a valid agent / target / lon, lat"}
             return {"ok": False, "error": f"{kind} needs a valid 'value'"}
         return {"ok": True, "state": self.nav.state, "warp": self.warp,
-                "model": self.router.active.name}
+                "model": self.router.active.name, "selected": w.selected if w else None}
 
     # ------------------------------------------------------------------------------------ streaming
     def _subscribers(self, topic: str) -> list[web.WebSocketResponse]:
@@ -459,6 +766,7 @@ class SimServer:
             "warp": self.warp, "model": self.router.active.name,
             "nav": {k: (_r(v, 4) if isinstance(v, float) else v) for k, v in nav.items()},
             "avoid": None,
+            "agent": self.world.selected if self.world is not None else None,
         }
 
     async def tick(self, elapsed: float) -> None:
@@ -468,8 +776,18 @@ class SimServer:
         mission install may run, and the step must never mix the old mission's pose with the new
         mission's path, terrain or obstacles. Messages are queued and sent at the end, in order.
         """
-        router, nav, avoid = self.router, self.nav, self.avoid
+        router, nav, avoid, world = self.router, self.nav, self.avoid, self.world
         outbox: list[tuple[bool, object, str]] = []          # (binary, payload, topic)
+        sel = world.sel if world is not None else None
+        if sel is not None and sel.mode != "route" and sel.path_version != self._nav_version:
+            # The selected object got a new path (new mission, re-plan, wander goal).
+            self._nav_version = sel.path_version
+            if sel.mode in AUTO_MODES and sel.path is not None:
+                nav.load_path(sel.path)
+                if world.running:
+                    nav.start()
+                if getattr(getattr(avoid, "brain", None), "mode", "track") != "track":
+                    avoid.reset()                  # a detour planned around the old path is stale
         pose = router.pose()
         ev = avoid.tick(pose, nav, router.sim_time)
         if ev is not None:
@@ -477,10 +795,30 @@ class SimServer:
             msg.setdefault("type", "avoid_event")
             outbox.append((False, msg, "events"))
         nav.observe(pose)
-        router.set_inputs(*avoid.command(nav.command(), pose, nav))
-        router.update(min(elapsed, 0.25), self.warp)
+        if sel is not None and sel.mode == "manual":
+            v, om, at = self._drive
+            cmd = (v, om) if time.monotonic() - at <= DRIVE_TIMEOUT_S else (0.0, 0.0)
+        elif sel is not None and sel.mode in ("stopped", "idle"):
+            cmd = (0.0, 0.0)
+        else:
+            cmd = avoid.command(nav.command(), pose, nav)
+        router.set_inputs(*cmd)
+        n = router.update(min(elapsed, 0.25), self.warp)
         for ev in router.pop_events():             # collider self-test failure, fall-through recovery
             outbox.append((False, ev, "events"))
+        if world is not None:
+            p = router.pose()
+            world.sync_selected(p.x, p.y, p.z, euler_from_quat(p.q)[2], math.hypot(p.vx, p.vy))
+            if sel is not None and sel.mode in AUTO_MODES and nav.state == "arrived":
+                world.on_arrived(sel)
+            world.step(n * router.timestep_s)
+            for ev in world.pop_events():          # objects met
+                outbox.append((False, ev, "events"))
+            now = time.monotonic()
+            if now - self._last_world_post >= 1.0 / WORLD_POST_HZ:
+                self._last_world_post = now
+                outbox.append((False, {"type": "world", "mission": self.mission_id, "sim_time":
+                                       _r(router.sim_time, 2), **world.describe()}, "telemetry"))
         if avoid.enabled and self._subscribers("lidar") and avoid.stream_due():
             outbox.append((True, avoid.encode_frame(pose, nav), "lidar"))
 
@@ -586,6 +924,14 @@ async def handle_mission_post(request: web.Request) -> web.Response:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return _error(422, "request body must be JSON")
     return await _mission_response(request.app[SIM_KEY].build_mission(body))
+
+
+async def handle_world_post(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _error(422, "request body must be JSON")
+    return await _mission_response(request.app[SIM_KEY].build_world(body))
 
 
 async def handle_mission_get(request: web.Request) -> web.Response:
@@ -708,6 +1054,7 @@ def make_app(sim: SimServer | None = None) -> web.Application:
     r.add_get("/sim/config", handle_config)
     r.add_post("/sim/api/mission", handle_mission_post)
     r.add_get("/sim/api/mission", handle_mission_get)
+    r.add_post("/sim/api/world", handle_world_post)
     r.add_post("/sim/api/command", handle_command)
     r.add_get(r"/sim/api/terrain/{level:corridor|context}.bin", handle_terrain)
     r.add_get(r"/sim/api/texture/{level:corridor|context}.jpg", handle_texture)

@@ -132,3 +132,27 @@ button:disabled { cursor: not-allowed; }
 
 .mo-place-card .btn-primary:hover:not(:disabled) { transform: none; }
 .mo-panorama-pin { display: grid; place-items: center; width: 36px; height: 24px; border: 1px solid #5ee6ff; border-radius: 8px; background: #0a0f16; color: #5ee6ff; font: 600 10px/1 var(--font-mono); box-shadow: 0 2px 8px #0009; }
+
+/* Locations and sim objects on the background map (map/markers.ts). */
+.mo-mk { position: relative; width: 26px; height: 26px; cursor: pointer; }
+.mo-mk-body {
+  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 9999px;
+  background: var(--c); box-shadow: 0 0 0 2px rgba(5,7,10,.85), 0 2px 8px rgba(0,0,0,.6);
+}
+.mo-mk.sel .mo-mk-body { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(5,7,10,.85), 0 0 14px var(--c); }
+.mo-mk.hl .mo-mk-body { box-shadow: 0 0 0 3px #fff, 0 0 22px 6px var(--c); animation: mo-mk-pulse 1.4s ease-in-out infinite; }
+.mo-mk-name {
+  position: absolute; left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%); white-space: nowrap;
+  font: 600 10.5px/1.2 ui-sans-serif, system-ui, sans-serif; color: #f8fafc; cursor: pointer; padding: 2px 3px;
+  text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
+}
+.mo-mk-arrow {
+  position: absolute; left: 13px; top: 11.5px; height: 3px; transform-origin: 0 50%; background: var(--c);
+  box-shadow: 0 0 0 1px rgba(5,7,10,.7); pointer-events: none;
+}
+.mo-mk-arrow::after {
+  content: ''; position: absolute; right: -2px; top: -4px; border-left: 8px solid var(--c);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+@keyframes mo-mk-pulse { 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .mo-mk.hl .mo-mk-body { animation: none; } }

@@ -202,7 +202,9 @@ def test_tick_does_not_interleave_with_mission_install(terrain_tif, tmp_path):
         sim.avoid.tick = lambda *a: {"type": "avoid_event", "mode": "avoid", "detail": "test"}
         await sim.tick(0.02)
         # Old order was broadcast(event) -> update -> broadcast(telemetry): a yield mid-step.
-        assert [k for k, _ in calls] == ["update", "broadcast", "broadcast"]
+        # event, telemetry and the (rate-limited) world message: all sent after the step.
+        kinds = [k for k, _ in calls]
+        assert kinds[0] == "update" and kinds[1:] == ["broadcast"] * (len(kinds) - 1) and len(kinds) >= 3
     run(body, sim)
 
 

@@ -67,7 +67,17 @@ Until M5's `sim/obstacle_avoid/service.py` exists, the server falls back to a bu
 the same interface, and obstacle avoidance stays disabled. No stub file is needed.
 
 **Commands** (WebSocket text or `POST /sim/api/command`): `start`, `pause`, `reset`,
-`set_speed` (m/s), `set_warp` (clamped to 0.1–50), `set_model` (`wheeled` or `kinematic`).
+`set_speed` (m/s), `set_warp` (clamped to 0.1–50), `set_model` (only before the run starts).
+Object commands (`server/world.py`): `select {agent, manual?}`, `drive {v, w}` (−1..1, WASD /
+joystick), `goto {agent?, lon, lat}` (path from the M2 planner when it answers, else straight),
+`intercept {agent?, target}` (aims at the predicted meeting point), and `end` (ends the simulation).
+
+**Objects.** Every demo is a world of objects; the selected one runs on the physics router with
+the navigator and M5 avoidance, the others on a terrain-following integrator. Two objects closer
+than 5 m stop until one gets a new mission. `POST /sim/api/mission` takes an optional
+`"object": "rover" | "astronaut"`; `POST /sim/api/world` with `{agents: [{kind, name?}], obstacles:
+{enabled, seed}}` builds the world demo over the whole AOI (sparse map-wide obstacles). A `world`
+message on the telemetry topic lists all objects at 5 Hz.
 
 Example mission request:
 

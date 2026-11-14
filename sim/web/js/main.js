@@ -118,6 +118,7 @@ let world = null;             // THREE.Group with everything mission-specific
 let rover = null;
 let astro = null;             // AstronautView, shown when telemetry.model === 'astronaut'
 let arcView = null;
+let obstacleGroups = [];      // boulders + crater markers: hidden in the whole-AOI view
 let loading = null;           // the single in-flight loadMission() promise
 let loadingId = null;         // mission id that load is building
 let serverMission = null;     // newest mission id the server announced (telemetry / mission_loaded)
@@ -176,6 +177,7 @@ async function loadMission() {
 
       buffer.clear();
       haveCameraFix = false;
+      if (m.kind === 'world') cameraMode = 'overview';   // the world demo opens on the whole AOI
       setupControls();
       loadingEl.classList.add('hidden');
       post('ready', { mission: m.id });
@@ -245,20 +247,26 @@ function buildWorld(m, g) {
   for (const alt of m.alternatives || []) {
     world.add(ribbon(alt.xy, sampler, { width: 1.0, color: alt.color, opacity: 0.45, lift: 0.12 }));
   }
-  world.add(ribbon(m.route.xy, sampler, { width: 1.6, color: m.route.color, opacity: 0.9, lift: 0.15 }));
-  const [sx, sy] = m.route.xy[0];
-  const [ex, ey] = m.route.xy[m.route.xy.length - 1];
-  world.add(marker(sx, sy, sampler, '#ffffff'));
-  world.add(marker(ex, ey, sampler, m.route.color, { pole: true }));
+  if (m.route.xy.length >= 2) {           // the world demo has no route
+    world.add(ribbon(m.route.xy, sampler, { width: 1.6, color: m.route.color, opacity: 0.9, lift: 0.15 }));
+    const [sx, sy] = m.route.xy[0];
+    const [ex, ey] = m.route.xy[m.route.xy.length - 1];
+    world.add(marker(sx, sy, sampler, '#ffffff'));
+    world.add(marker(ex, ey, sampler, m.route.color, { pole: true }));
+  }
+  worldState = m.world ? { mission: m.id, ...m.world } : null;
+  for (const [, s] of squares) { agentsGroup.remove(s.sprite); s.sprite.material.map.dispose(); s.sprite.material.dispose(); }
+  squares.clear();
   scene.add(world);
+  updateSquares();
 }
 
 async function addObstacles(m) {
   if (!m.obstacles || !m.obstacles.enabled) return;
   try {
     const mod = await import('../obstacle_avoid/obstacles_view.js');
-    world.add(mod.rocksGroup(m.obstacles.rocks || [], sampler));
-    world.add(mod.cratersGroup(m.obstacles.craters || [], sampler));
+    obstacleGroups = [mod.rocksGroup(m.obstacles.rocks || [], sampler), mod.cratersGroup(m.obstacles.craters || [], sampler)];
+    world.add(...obstacleGroups);
     arcView = new mod.ArcView(sampler);
     world.add(arcView.line);
   } catch (err) {
@@ -285,10 +293,13 @@ function overviewPose() {
            position: new THREE.Vector3(cx, sampler(cx, cy) + dist * 0.82, -cy + dist * 0.57) };
 }
 
-function setCamera(mode, force = false) {
+function setCamera(mode, force = false, agent = null) {
   if (!['chase', 'orbit', 'overview'].includes(mode)) return;
-  if (mode === cameraMode && !force) return;
+  if (mode === cameraMode && !force && !agent) return;
   cameraMode = mode;
+  post('camera', { mode });
+  if (mode !== 'overview' && !force) takeControl(agent);
+  if (agent) haveCameraFix = false;
   document.querySelectorAll('[data-cam]').forEach((b) => b.classList.toggle('active', b.dataset.cam === mode));
   controls.enabled = mode !== 'chase';
   if (!grids) return;
@@ -348,7 +359,6 @@ function updateHud(t) {
   start.textContent = n.state === 'driving' ? 'Pause' : 'Start';
   start.disabled = n.state === 'arrived';
   syncSelect('sel-warp', t.warp);
-  syncSelect('sel-model', t.model);
   syncSelect('sel-speed', n.cruise_m_s);
 }
 
@@ -364,8 +374,6 @@ function fillControls() {
   $('sel-speed').innerHTML = c.speeds_m_s.map((v) =>
     `<option value="${v}">${v === c.real_max_speed_m_s ? `${v} m/s (real)` : `${v} m/s`}</option>`).join('');
   $('sel-warp').innerHTML = c.warps.map((w) => `<option value="${w}">${w}× time</option>`).join('');
-  $('sel-model').innerHTML = c.models.map((m) =>
-    `<option value="${m}">${{ wheeled: 'Wheeled (PyBullet)', kinematic: 'Kinematic', astronaut: 'Astronaut (on foot)' }[m] || m}</option>`).join('');
   $('sel-speed').value = String(c.default_speed_m_s);
 }
 
@@ -383,8 +391,99 @@ $('btn-start').addEventListener('click', () =>
 $('btn-reset').addEventListener('click', () => command({ type: 'reset' }));
 $('sel-speed').addEventListener('change', (e) => command({ type: 'set_speed', value: Number(e.target.value) }));
 $('sel-warp').addEventListener('change', (e) => command({ type: 'set_warp', value: Number(e.target.value) }));
-$('sel-model').addEventListener('change', (e) => command({ type: 'set_model', value: e.target.value }));
+// The object is chosen before the run (planner's Mission tab); it cannot be switched mid-simulation.
 document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => setCamera(b.dataset.cam)));
+
+// ------------------------------------------------------------------------------- world objects
+// World messages (~5 Hz) list every object. In the whole-AOI view each one is a cheap square
+// sprite with its name; in the chase / orbit views only the selected object's model is drawn and
+// the others are tracked (by the server) but not rendered.
+const KIND_COLOR = { rover: '#5ee6ff', astronaut: '#fbbf24' };
+let worldState = null;
+const agentsGroup = new THREE.Group();
+agentsGroup.name = 'agents';
+scene.add(agentsGroup);
+const squares = new Map();     // id -> { sprite, key }
+
+function squareTexture(name, kind, selected) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = 'bold 26px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(name, 128, 30);
+  g.fillStyle = '#ffffff'; g.fillText(name, 128, 30);
+  g.fillStyle = KIND_COLOR[kind] || '#ffffff';
+  g.fillRect(110, 50, 36, 36);
+  g.lineWidth = selected ? 5 : 3; g.strokeStyle = selected ? '#ffffff' : '#05070a';
+  g.strokeRect(110, 50, 36, 36);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function updateSquares() {
+  if (!worldState) return;
+  const seen = new Set();
+  for (const a of worldState.agents) {
+    seen.add(a.id);
+    const key = `${a.name}|${a.kind}|${a.id === worldState.selected}`;
+    let s = squares.get(a.id);
+    if (!s || s.key !== key) {
+      if (s) { agentsGroup.remove(s.sprite); s.sprite.material.map.dispose(); s.sprite.material.dispose(); }
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: squareTexture(a.name, a.kind, a.id === worldState.selected),
+        sizeAttenuation: false, depthTest: false, transparent: true }));
+      sprite.center.set(0.5, 0.0);
+      sprite.scale.set(0.16, 0.06, 1);
+      sprite.renderOrder = 10;
+      agentsGroup.add(sprite);
+      s = { sprite, key };
+      squares.set(a.id, s);
+    }
+    s.sprite.position.set(a.x, a.z + 1, -a.y);
+  }
+  for (const [id, s] of squares) {
+    if (!seen.has(id)) { agentsGroup.remove(s.sprite); s.sprite.material.map.dispose(); s.sprite.material.dispose(); squares.delete(id); }
+  }
+}
+
+function isWorld() { return !!(mission && mission.kind === 'world'); }
+
+/** Riding along with a world object selects it; it keeps wandering or its mission until driven. */
+function takeControl(agent) {
+  const id = agent || (worldState && worldState.selected);
+  if (isWorld() && id) {
+    if (worldState) worldState.selected = id;
+    buffer.clear();                       // the new object's pose replaces the old one's
+    const cmd = { type: 'select', agent: id };   // keeps its mission; WASD / joystick take over
+    if (!socket.send(cmd)) command(cmd);
+  }
+}
+
+// WASD / arrow keys drive the selected object (sent at 10 Hz while held, zero once on release).
+const keys = new Set();
+const KEYMAP = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' };
+let driveTimer = 0;
+function driveInput() {
+  return { v: (keys.has('f') ? 1 : 0) - (keys.has('b') ? 1 : 0), w: (keys.has('l') ? 1 : 0) - (keys.has('r') ? 1 : 0) };
+}
+function sendDrive() {
+  const cmd = { type: 'drive', ...driveInput() };
+  if (!socket.send(cmd)) command(cmd);
+}
+function onKey(e, down) {
+  const k = KEYMAP[e.code];
+  if (!k || !isWorld() || cameraMode === 'overview' || e.target instanceof HTMLSelectElement) return;
+  e.preventDefault();
+  if (down) keys.add(k); else keys.delete(k);
+  sendDrive();
+  clearInterval(driveTimer);
+  if (keys.size) driveTimer = setInterval(sendDrive, 100);
+}
+window.addEventListener('keydown', (e) => { if (!e.repeat) onKey(e, true); });
+window.addEventListener('keyup', (e) => onKey(e, false));
+window.addEventListener('blur', () => { if (keys.size) { keys.clear(); clearInterval(driveTimer); sendDrive(); } });
 
 // ------------------------------------------------------------------------------- socket
 const socket = new SimSocket('ws');
@@ -399,6 +498,7 @@ socket.on('telemetry', (t) => {
     noteServerMission(t.mission);
     return;
   }
+  if (isWorld() && worldState && t.agent && t.agent !== worldState.selected) return;   // pre-switch frame
   buffer.push(t);
   latest = t;
   if (arcView && t.avoid !== undefined) arcView.update(t.avoid);
@@ -415,6 +515,18 @@ socket.on('telemetry', (t) => {
 });
 
 socket.on('mission_loaded', (msg) => noteServerMission(msg.mission));
+
+socket.on('world', (msg) => {
+  if (!mission || msg.mission !== mission.id) return;
+  worldState = msg;
+  updateSquares();
+});
+
+socket.on('world_event', (ev) => {
+  toast(ev.detail || ev.event);
+  const { type, ...rest } = ev;
+  post('event', { ...rest, kind: type });
+});
 
 for (const kind of ['physics_event', 'avoid_event']) {
   socket.on(kind, (ev) => {
@@ -434,14 +546,170 @@ window.addEventListener('message', (e) => {
   if (!d || d.source !== 'mo-hub') return;
   if (d.type === 'command' && d.command && typeof d.command === 'object') {
     if (!socket.send(d.command)) command(d.command);
+  } else if (d.type === 'locations' && Array.isArray(d.list)) {
+    userLocations = d.list.filter((l) => l && Number.isFinite(l.lon) && Number.isFinite(l.lat));
   } else if (d.type === 'camera') {
-    setCamera(d.mode);
+    setCamera(d.mode, false, typeof d.agent === 'string' ? d.agent : null);
   }
 });
 
 // The figure that carries the pose: the astronaut when the "astronaut" motion model is active.
 function onFoot() { return !!(astro && latest && latest.model === 'astronaut'); }
 function activeBody() { return onFoot() ? astro : rover; }
+
+// ------------------------------------------------------------------------------- near objects + guides
+// Chase / orbit views: objects within NEAR_M of the selected vehicle are drawn with their models
+// (positions from the 5 Hz world messages, smoothed per frame); the rest stay hidden.
+const NEAR_M = 100;
+const nearViews = new Map();      // id -> { view, kind, s: {x, y, z, yaw}, phase }
+function wrapPi(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+function updateNearby(dt) {
+  const seen = new Set();
+  if (worldState && config && cameraMode !== 'overview') {
+    const sx = roverPos.x, sy = -roverPos.z;
+    for (const a of worldState.agents) {
+      if (a.id === worldState.selected || Math.hypot(a.x - sx, a.y - sy) > NEAR_M) continue;
+      seen.add(a.id);
+      let n = nearViews.get(a.id);
+      const yaw = THREE.MathUtils.degToRad(a.yaw_deg);
+      if (!n || n.kind !== a.kind) {
+        if (n) { scene.remove(n.view.root); disposeTree(n.view.root); }
+        const view = a.kind === 'astronaut' && config.astronaut ? new AstronautView(config.astronaut) : new RoverView(config.rover);
+        if (view instanceof RoverView) view.load(config.rover.model_url);
+        scene.add(view.root);
+        n = { view, kind: a.kind, s: { x: a.x, y: a.y, z: a.z, yaw }, phase: 0 };
+        nearViews.set(a.id, n);
+      }
+      const k = 1 - Math.exp(-dt / 0.25);
+      n.s.x += (a.x - n.s.x) * k; n.s.y += (a.y - n.s.y) * k; n.s.z += (a.z - n.s.z) * k;
+      n.s.yaw += wrapPi(yaw - n.s.yaw) * k;
+      n.view.setPose({ x: n.s.x, y: n.s.y, z: n.s.z, q: [0, 0, Math.sin(n.s.yaw / 2), Math.cos(n.s.yaw / 2)] });
+      if (n.view instanceof AstronautView) { n.phase += dt * a.speed_m_s * 3.2; n.view.setGait(n.phase, a.speed_m_s); }
+    }
+  }
+  for (const [id, n] of nearViews) {
+    if (!seen.has(id)) { scene.remove(n.view.root); disposeTree(n.view.root); nearViews.delete(id); }
+  }
+}
+
+// Ground guide: a white circle around the selected vehicle and, from it, one arrow per location /
+// object type pointing at the nearest one (name + distance), coloured as in the planner legend.
+// On a mission (travel / intercept) only the arrow to its target is shown.
+const TYPE_COLOR = { HQ: '#f8fafc', Geological: '#a78bfa', Cargo: '#f59e0b', Supplies: '#34d399', Greenhouse: '#a3e635',
+                     Attention: '#f87171', rover: '#5ee6ff', astronaut: '#fbbf24' };
+let userLocations = [];           // [{name, type, lon, lat}] from the planner (Location tab)
+const guide = new THREE.Group();
+guide.name = 'guide';
+scene.add(guide);
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.94, 1, 72),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide }));
+ring.rotation.x = -Math.PI / 2;
+ring.renderOrder = 20;
+guide.add(ring);
+const arrowShape = new THREE.Shape();
+arrowShape.moveTo(0, -0.07); arrowShape.lineTo(0.68, -0.07); arrowShape.lineTo(0.68, -0.2);
+arrowShape.lineTo(1, 0); arrowShape.lineTo(0.68, 0.2); arrowShape.lineTo(0.68, 0.07); arrowShape.lineTo(0, 0.07);
+const arrowGeo = new THREE.ShapeGeometry(arrowShape);
+arrowGeo.rotateX(-Math.PI / 2);   // flat on the ground, pointing +x
+const arrows = new Map();         // key -> { group, mesh, label, text }
+let guideTimer = 0;
+let guideTargets = [];
+
+function toLocal(lon, lat) {
+  const f = mission.frame, r = THREE.MathUtils.degToRad;
+  return { x: f.radius_m * Math.cos(r(f.lat0)) * r(lon - f.lon0), y: f.radius_m * r(lat - f.lat0) };
+}
+const fmtD = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+
+function labelTexture(text, color) {
+  const c = document.createElement('canvas');
+  c.width = 320; c.height = 56;
+  const g = c.getContext('2d');
+  g.font = 'bold 26px system-ui, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(text, 160, 28);
+  g.fillStyle = color; g.fillText(text, 160, 28);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function computeTargets(sx, sy) {
+  const out = [];
+  const sel = worldState && worldState.agents.find((a) => a.id === worldState.selected);
+  const agents = (worldState ? worldState.agents : []).filter((a) => a.id !== (sel && sel.id));
+  const locs = mission && mission.frame ? userLocations.map((l) => ({ ...l, ...toLocal(l.lon, l.lat) })) : [];
+  if (sel && sel.mode === 'intercept' && sel.target) {
+    const t = agents.find((a) => a.id === sel.target);
+    if (t) return [{ key: 'mission', name: t.name, color: TYPE_COLOR[t.kind], x: t.x, y: t.y }];
+  }
+  if (sel && sel.mode === 'goto' && sel.goal) {
+    const g = toLocal(sel.goal.lon, sel.goal.lat);
+    const loc = locs.find((l) => Math.hypot(l.x - g.x, l.y - g.y) < 10);
+    return [{ key: 'mission', name: loc ? loc.name : 'Destination', color: loc ? TYPE_COLOR[loc.type] : '#ffffff', x: g.x, y: g.y }];
+  }
+  const nearest = (items, type, color) => {
+    let best = null, bd = Infinity;
+    for (const it of items) { const d = Math.hypot(it.x - sx, it.y - sy); if (d < bd) { bd = d; best = it; } }
+    if (best) out.push({ key: type, name: best.name, color, x: best.x, y: best.y });
+  };
+  for (const kind of ['rover', 'astronaut']) nearest(agents.filter((a) => a.kind === kind), kind, TYPE_COLOR[kind]);
+  for (const type of ['HQ', 'Geological', 'Cargo', 'Supplies', 'Greenhouse', 'Attention']) nearest(locs.filter((l) => l.type === type), type, TYPE_COLOR[type]);
+  return out;
+}
+
+function updateGuides(dt) {
+  const on = !!(grids && mission && cameraMode !== 'overview');
+  guide.visible = on;
+  if (!on) return;
+  const R = onFoot() ? 1.8 : 4.2;                        // circle radius around the vehicle (m)
+  const L = onFoot() ? 1.6 : 3.0;                        // arrow length (m)
+  guide.position.set(roverPos.x, roverPos.y + 0.15, roverPos.z);
+  ring.scale.setScalar(R);
+  const sx = roverPos.x, sy = -roverPos.z;
+  guideTimer -= dt;
+  if (guideTimer <= 0) { guideTimer = 0.25; guideTargets = computeTargets(sx, sy); }
+  const keep = new Set();
+  for (const t of guideTargets) {
+    keep.add(t.key);
+    let a = arrows.get(t.key);
+    if (!a) {
+      const group = new THREE.Group();
+      const mesh = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthTest: false, side: THREE.DoubleSide }));
+      mesh.renderOrder = 21;
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, transparent: true, sizeAttenuation: false }));
+      label.center.set(0, 0.5);
+      label.scale.set(0.21, 0.037, 1);
+      label.renderOrder = 22;
+      group.add(mesh, label);
+      guide.add(group);
+      a = { group, mesh, label, text: '' };
+      arrows.set(t.key, a);
+    }
+    const dx = t.x - sx, dy = t.y - sy;
+    a.group.rotation.y = Math.atan2(dy, dx);        // +x turned towards (dx, -dy) in scene axes
+    a.mesh.position.set(R + 0.15, 0, 0);
+    a.mesh.scale.set(L, 1, L * 0.9);
+    a.mesh.material.color.set(t.color);
+    a.label.position.set(R + L + 0.5, 0.3, 0);
+    const text = `${t.name} · ${fmtD(Math.hypot(dx, dy))}`;
+    if (text !== a.text) {
+      if (a.label.material.map) a.label.material.map.dispose();
+      a.label.material.map = labelTexture(text, t.color);
+      a.label.material.needsUpdate = true;
+      a.text = text;
+    }
+  }
+  for (const [key, a] of arrows) {
+    if (!keep.has(key)) {
+      guide.remove(a.group);
+      a.mesh.material.dispose();
+      if (a.label.material.map) a.label.material.map.dispose();
+      a.label.material.dispose();
+      arrows.delete(key);
+    }
+  }
+}
 
 // ------------------------------------------------------------------------------- frame loop
 const clock = new THREE.Clock();
@@ -452,8 +720,12 @@ function frame() {
     const s = buffer.sample();
     if (s) {
       const foot = onFoot();
-      rover.root.visible = !foot;
-      if (astro) astro.root.visible = foot;
+      // World demo, whole-AOI view: squares only (no models). Otherwise only the selected model.
+      const squaresOnly = isWorld() && cameraMode === 'overview';
+      agentsGroup.visible = squaresOnly;
+      for (const g of obstacleGroups) g.visible = cameraMode !== 'overview';
+      rover.root.visible = !foot && !squaresOnly;
+      if (astro) astro.root.visible = foot && !squaresOnly;
       const body = activeBody();
       body.setPose(s);
       if (foot) astro.setGait(s.wheels && s.wheels[0] ? s.wheels[0].spin : 0, latest ? latest.speed_m_s : 0);
@@ -461,6 +733,8 @@ function frame() {
       roverPos.copy(body.root.position);
     }
     updateCamera(dt);
+    updateNearby(dt);
+    updateGuides(dt);
     sun.target.position.copy(roverPos);
     sun.position.copy(roverPos).addScaledVector(SUN_DIR, 200);
     $('stale').classList.toggle('on', buffer.age() > STALE_MS && !!latest);
