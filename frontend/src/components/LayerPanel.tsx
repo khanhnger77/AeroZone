@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { LayersManifest } from '../types'
 import type { MapLayerState } from '../map/MarsMap'
 import { TREK_LAYERS } from '../map/trek'
@@ -10,12 +11,19 @@ interface Props {
   detailed?: boolean
 }
 
+function LayerDetails({ label, children }: { label: string; children: ReactNode }) {
+  return <details className="mt-2 rounded-lg border border-line/70 bg-panel-2/30 px-2.5">
+    <summary className="cursor-pointer py-2 text-[11px] text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-cyan" aria-label={`Source and processing for ${label}`}>Source & processing</summary>
+    <div className="space-y-1.5 break-words pb-2.5 text-[11px] leading-relaxed text-muted">{children}</div>
+  </details>
+}
+
 export default function LayerPanel({ manifest, layers, setLayers, detailed }: Props) {
   const bases = TREK_LAYERS.filter((l) => l.kind === 'base')
   const overlays = TREK_LAYERS.filter((l) => l.kind === 'overlay')
   return (
     <div>
-      <PanelHeader kicker="Data layers" title="Every layer on the map" subtitle="Toggle orbital imagery, thermal IR, our terrain products and rover data. Each layer lists its source and processing." />
+      <PanelHeader kicker="Data layers" title="Every layer on the map" subtitle="Switch layers on or off. Open a layer’s details to see its source and how it was made." />
       <Section title="Basemap (regional context)">
         <div className="grid grid-cols-2 gap-2">
           {bases.map((b) => (
@@ -34,14 +42,18 @@ export default function LayerPanel({ manifest, layers, setLayers, detailed }: Pr
             <li key={l.id}>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm">{l.name}</div>
-                  <div className="text-[10px] text-muted">{l.mission} · {l.instrument} · {l.resolution}</div>
+                  <div className="text-sm leading-snug">{l.name}</div>
+                  <div className="mt-0.5 text-[10px] text-muted">{l.instrument} · {l.resolution}</div>
                 </div>
                 <Toggle label={l.name} on={!!layers.trek[l.id]}
                   onChange={(v) => setLayers((s) => ({ ...s, trek: { ...s.trek, [l.id]: v } }))} />
               </div>
               {detailed && (
-                <p className="mt-1 text-[11px] leading-snug text-muted"><CategoryTag c="observation" /> {l.description}</p>
+                <LayerDetails label={l.name}>
+                  <CategoryTag c="observation" />
+                  <p><span className="text-ink/70">Source: </span>NASA Mars Trek · {l.mission} · {l.instrument}</p>
+                  <p>{l.description}</p>
+                </LayerDetails>
               )}
             </li>
           ))}
@@ -57,8 +69,8 @@ export default function LayerPanel({ manifest, layers, setLayers, detailed }: Pr
               <li key={r.id}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate text-sm">{r.name}</div>
-                    <div className="mt-0.5"><CategoryTag c={r.category} /></div>
+                    <div className="text-sm leading-snug">{r.name}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted"><span>5 m/px</span><CategoryTag c={r.category} /></div>
                   </div>
                   <Toggle label={r.name} on={st.on}
                     onChange={(v) => setLayers((s) => ({ ...s, raster: { ...s.raster, [r.id]: { ...st, on: v } } }))} />
@@ -74,10 +86,10 @@ export default function LayerPanel({ manifest, layers, setLayers, detailed }: Pr
                   </div>
                 )}
                 {detailed && (
-                  <dl className="mt-1.5 space-y-0.5 text-[11px] leading-snug text-muted">
+                  <LayerDetails label={r.name}><dl className="space-y-1">
                     <div><dt className="inline text-ink/70">Source: </dt><dd className="inline">{r.source}</dd></div>
                     <div><dt className="inline text-ink/70">Processing: </dt><dd className="inline">{r.processing}</dd></div>
-                  </dl>
+                  </dl></LayerDetails>
                 )}
               </li>
             )
@@ -93,10 +105,10 @@ export default function LayerPanel({ manifest, layers, setLayers, detailed }: Pr
           </div>
         ))}
         {detailed && (
-          <p className="mt-1 text-[11px] leading-snug text-muted">
-            <CategoryTag c="observation" /> NASA/JPL Mars 2020 MMGIS localization files. Sample positions are
-            <em> derived</em>: last rover fix on/before the sealing sol.
-          </p>
+          <LayerDetails label="Rover observations">
+            <CategoryTag c="observation" />
+            <p>NASA/JPL Mars 2020 MMGIS localization files. Sample positions are <em>derived</em>: last rover fix on/before the sealing sol.</p>
+          </LayerDetails>
         )}
       </Section>
 

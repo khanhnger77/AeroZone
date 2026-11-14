@@ -1,24 +1,75 @@
+import { useCallback, useEffect, useRef } from 'react'
 import L from 'leaflet'
-import { MapContainer, Rectangle, TileLayer } from 'react-leaflet'
+import { CircleMarker, MapContainer, Rectangle, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { TREK_LAYERS, trekUrl } from '../map/trek'
+import type { LonLat, MapViewport } from '../types'
 
-/** Locator inset: where the study area sits on Mars (MOLA colour shaded relief). */
-export default function MiniMap({ aoi }: { aoi: [[number, number], [number, number]] | null }) {
-  const mola = TREK_LAYERS.find((l) => l.id === 'mola')!
-  return (
-    <div className="glass hud-corners overflow-hidden rounded-xl">
-      <div className="flex items-center justify-between px-2.5 py-1.5">
-        <span className="label !text-[9px]">Locator · MOLA</span>
-        <span className="font-mono text-[9px] text-faint">18.5°N 77.4°E</span>
-      </div>
-      <div className="h-[110px] w-[200px]">
-        <MapContainer crs={L.CRS.EPSG4326} center={[18.46, 77.4]} zoom={4} zoomControl={false} attributionControl={false}
-          dragging={false} scrollWheelZoom={false} doubleClickZoom={false} touchZoom={false} keyboard={false}
-          boxZoom={false} className="h-full w-full">
-          <TileLayer url={trekUrl(mola)} maxNativeZoom={mola.maxNativeZoom} />
-          {aoi && <Rectangle bounds={L.latLngBounds(aoi).pad(2.5)} pathOptions={{ color: '#ff6a3d', weight: 1.5, fillOpacity: 0.15 }} />}
-        </MapContainer>
-      </div>
+const ZOOM_OFFSET = 4
+const overviewZoom = (mainZoom: number) => Math.max(2, Math.min(12, mainZoom - ZOOM_OFFSET))
+
+function LocatorSync({ viewport, onNavigate }: { viewport: MapViewport | null; onNavigate: (center: LonLat, zoom: number) => void }) {
+  const map = useMap()
+  const syncing = useRef(false)
+  const latest = useRef({ viewport, onNavigate })
+  latest.current = { viewport, onNavigate }
+  const followMainView = useCallback(() => {
+    const current = latest.current.viewport
+    if (!current || !map.getContainer().clientWidth) return
+    syncing.current = true
+    try {
+      map.invalidateSize({ pan: false, animate: false })
+      map.setView([current.center.lat, current.center.lon], overviewZoom(current.zoom), { animate: false })
+    } finally { syncing.current = false }
+  }, [map])
+  useEffect(followMainView, [viewport, followMainView])
+  useEffect(() => {
+    const observer = new ResizeObserver(followMainView)
+    observer.observe(map.getContainer())
+    return () => observer.disconnect()
+  }, [map, followMainView])
+  useMapEvents({
+    moveend: () => {
+      if (syncing.current || !latest.current.viewport || !map.getContainer().clientWidth) return
+      const center = map.getCenter(), previous = latest.current.viewport
+      const zoomDelta = map.getZoom() - overviewZoom(previous.zoom)
+      const mainZoom = Math.max(3, Math.min(19, previous.zoom + zoomDelta))
+      if (Math.abs(center.lat - previous.center.lat) < 1e-9 && Math.abs(center.lng - previous.center.lon) < 1e-9 && mainZoom === previous.zoom) return
+      latest.current.onNavigate({ lon: center.lng, lat: center.lat }, mainZoom)
+    },
+    click: event => {
+      const previous = latest.current.viewport
+      if (previous) latest.current.onNavigate({ lon: event.latlng.lng, lat: event.latlng.lat }, previous.zoom)
+    },
+  })
+  return null
+}
+
+/** A live locator: follows the main view; drag/click/zoom here to navigate it. */
+export default function MiniMap({ aoi, viewport, onNavigate }: {
+  aoi: [[number, number], [number, number]] | null
+  viewport: MapViewport | null
+  onNavigate: (center: LonLat, zoom: number) => void
+}) {
+  const mola = TREK_LAYERS.find(l => l.id === 'mola')!
+  const center = viewport?.center ?? { lon: 77.385, lat: 18.462 }
+  return <section aria-label="Locator map" className="glass hud-corners w-[220px] overflow-hidden rounded-xl">
+    <div className="flex items-center justify-between px-2.5 py-1.5">
+      <span className="label !text-[9px]">Locator · MOLA</span>
+      <span className="font-mono text-[9px] text-muted">{Math.abs(center.lat).toFixed(2)}°{center.lat >= 0 ? 'N' : 'S'} {Math.abs(center.lon).toFixed(2)}°{center.lon >= 0 ? 'E' : 'W'}</span>
     </div>
-  )
+    <div className="h-[120px] w-full" title="Drag or click to move the main map. Scroll to zoom.">
+      <MapContainer crs={L.CRS.EPSG4326} center={[center.lat, center.lon]} zoom={overviewZoom(viewport?.zoom ?? 13)} minZoom={2} maxZoom={12} zoomControl={false} attributionControl={false}
+        dragging scrollWheelZoom doubleClickZoom touchZoom keyboard boxZoom={false} className="h-full w-full" aria-label="Interactive locator">
+        <TileLayer url={trekUrl(mola)} maxNativeZoom={mola.maxNativeZoom} maxZoom={12} />
+        {aoi && <Rectangle bounds={aoi} interactive={false} pathOptions={{ color: '#ff6a3d', weight: 1, fillOpacity: 0 }} />}
+        {viewport && <Rectangle bounds={viewport.bounds} interactive={false} pathOptions={{ color: '#5ee6ff', weight: 1.5, fillOpacity: .1 }} />}
+        <CircleMarker center={[center.lat, center.lon]} radius={2} interactive={false} pathOptions={{ color: '#ffffff', weight: 1, fillOpacity: 1 }} />
+        <LocatorSync viewport={viewport} onNavigate={onNavigate} />
+      </MapContainer>
+    </div>
+    <div className="space-y-1 border-t border-line px-2.5 py-1.5 text-[9px] text-muted">
+      <div className="flex gap-3"><span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 border border-cyan" />Current view</span><span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 border border-mars" />Study area</span></div>
+      <p>Drag / click to navigate · scroll to zoom</p>
+    </div>
+  </section>
 }
