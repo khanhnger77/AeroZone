@@ -21,7 +21,7 @@ from .geometry import Route, load_config, yaw_of
 from .lidar import Scan, VirtualLidar
 from .planner import AvoidanceSupervisor, ObstacleMap, shadow_hazards
 
-PLANNER_DESC = "Dijkstra 0.4 m on a lidar clearance map · pure pursuit · footprint safety check · watchdog"
+PLANNER_DESC = "A* 0.4 m on a lidar clearance map · pure pursuit · footprint safety check · watchdog"
 
 
 class ObstacleAvoidance:

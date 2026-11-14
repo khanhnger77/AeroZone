@@ -125,6 +125,37 @@ def test_map_keys_roundtrip_and_local_clearance():
     assert ap.footprint_clear(lm, [[7.0, 0.0]], 0.0)[0] < float(lm.clear_at(7.0, 0.0))
 
 
+def test_astar_is_optimal_vs_dijkstra():
+    """A* (heuristic = distance to the nearest goal) must find the same cost as plain Dijkstra."""
+    from skimage.graph import MCP_Geometric
+    from sim.obstacle_avoid.planner import astar
+    rng = np.random.default_rng(0)
+    for trial in range(6):
+        n = 120
+        cost = 1.0 + 4.0 * rng.random((n, n))
+        walls = rng.random((n, n)) < 0.18
+        cost[walls] = np.inf
+        start = (int(rng.integers(n)), int(rng.integers(n)))
+        cost[start] = 1.0
+        goals = np.zeros((n, n), bool)
+        for _ in range(5):
+            goals[int(rng.integers(n)), int(rng.integers(n))] = True
+        goals &= np.isfinite(cost)
+        res = astar(cost, start, goals, 0.4)
+        mcp = MCP_Geometric(cost, fully_connected=True, sampling=(0.4, 0.4))
+        cum, _ = mcp.find_costs([start])
+        best = cum[goals].min() if goals.any() else np.inf
+        if not np.isfinite(best):
+            assert res.reached is None
+            continue
+        assert res.reached is not None and goals[res.reached]
+        path = np.array(res.path)
+        assert tuple(path[0]) == start
+        steps = np.abs(np.diff(path, axis=0))
+        assert steps.max() <= 1 and (steps.sum(1) > 0).all()
+        assert abs(res.g[res.reached[0] * n + res.reached[1]] - best) < 1e-6 * max(1.0, best)
+
+
 def test_ldr1_roundtrip():
     g = flat_grid()
     av = ObstacleAvoidance({})
