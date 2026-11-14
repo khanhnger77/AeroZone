@@ -1,0 +1,66 @@
+obstacles:
+  mean_spacing_m: 250
+  min_spacing_m: 120
+  keep_clear_start_m: 40
+  keep_clear_end_m: 30
+  rocks_per_site: [1, 2]
+  radius_m: [1.5, 2.5]
+  height_ratio: [0.55, 0.9]
+  lateral_jitter_m: 0.8
+  pair_spacing: [1.6, 2.4]
+  bury_fraction: 0.2
+  surface_density_per_m2: 25
+craters:
+  mean_spacing_m: 450
+  min_spacing_m: 200
+  keep_clear_start_m: 60
+  keep_clear_end_m: 40
+  radius_m: [8.0, 12.0]
+  depth_ratio: [0.12, 0.18]
+  rim_ratio: [0.03, 0.05]
+  lateral_jitter_m: 3.0
+  boulder_clearance_m: 15
+lidar:
+  range_m: 10.0
+  mount_height_m: 2.0
+  h_res_deg: 1.5
+  v_fov_deg: [-45.0, 15.0]
+  v_res_deg: 1.875
+  terrain_az_step_deg: 0.75
+  terrain_r_step_m: 0.1
+  scan_hz_sim: 5
+  scan_every_m: 0.5
+  stream_hz: 4
+planner:
+  name: arc
+  obstacle_height_m: 0.30
+  step_cell_m: 0.5
+  hole_depth_m: 0.30
+  negative_margin_m: 1.5
+  map_resolution_m: 0.2
+  map_window_m: 80
+  footprint_x_m: [-0.97, 0.0, 0.97]
+  footprint_r_m: 1.45
+  safety_margin_m: 0.35
+  check_ahead_m: 12
+  arc_length_m: 6.0
+  n_arcs: 25
+  min_turn_radius_m: 3.0
+  point_turns_deg: [20, 40, 60, 90]
+  reverse_length_m: 2.5
+  carrot_m: 8.0
+  w_goal: 1.0
+  w_path: 0.25
+  w_clear: 2.0
+  w_turn: 0.8
+  clear_ref_m: 2.5
+  rejoin_xte_m: 0.6
+  rejoin_heading_deg: 25
+  avoid_speed_m_s: 0.5
+  path_clear_ref_m: 3.0
+  path_w_clear: 4.0
+  path_lookahead_m: 2.5
+  watchdog_s: 60
+  recover_back_m: 4.0
+  max_recoveries: 4
+  recover_timeout_s: 30
