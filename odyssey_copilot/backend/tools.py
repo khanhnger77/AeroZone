@@ -423,6 +423,18 @@ def get_sample_info(sample_query_or_id: Union[str, int, None]) -> Dict[str, Any]
     return {"error": f"Sample '{sample_query_or_id}' not found in 25-sample catalog."}
 
 
+def list_samples(rock_class: Optional[str] = None) -> Dict[str, Any]:
+    """List the 25-sample catalog, optionally filtered by rock class (e.g. 'Igneous', 'Sedimentary')."""
+    wanted = (rock_class or "").strip().lower()
+    items = [
+        {"sample_no": s["sample_no"], "name": s["name"], "feature": s["feature"],
+         "rock_class": s["rock_class"], "sol_sealed": s["sol_sealed"]}
+        for s in SAMPLES_DB
+        if not wanted or wanted in s["rock_class"].lower()
+    ]
+    return {"count": len(items), "rock_class_filter": rock_class, "samples": items}
+
+
 def inspect_terrain(lon: float, lat: float) -> Dict[str, Any]:
     """
     Query /api/point on local backend with short timeout (2.0s), falling back to embedded
