@@ -12,9 +12,16 @@ export async function getJSON(url, options = {}) {
   try { body = await resp.json(); } catch { /* non-JSON error body */ }
   if (!resp.ok) {
     const detail = body && (body.detail || body.error);
-    throw new Error(`${url}: HTTP ${resp.status}${detail ? ` - ${detail}` : ''}`);
+    throw httpError(`${url}: HTTP ${resp.status}${detail ? ` - ${detail}` : ''}`, resp.status);
   }
   return body;
+}
+
+/** Error carrying the HTTP status, so callers can tell "stale mission" (409) from a failure. */
+function httpError(message, status) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
 }
 
 export function postJSON(url, data) {
@@ -24,7 +31,7 @@ export function postJSON(url, data) {
 
 export async function getBinary(url) {
   const resp = await fetch(url, { cache: 'no-store' });
-  if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
+  if (!resp.ok) throw httpError(`${url}: HTTP ${resp.status}`, resp.status);
   return resp.arrayBuffer();
 }
 

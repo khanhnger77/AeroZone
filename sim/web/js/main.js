@@ -116,6 +116,8 @@ let world = null;             // THREE.Group with everything mission-specific
 let rover = null;
 let arcView = null;
 let loading = null;           // the single in-flight loadMission() promise
+let loadingId = null;         // mission id that load is building
+let serverMission = null;     // newest mission id the server announced (telemetry / mission_loaded)
 let latest = null;            // newest telemetry
 let lastPost = 0;
 let cameraMode = 'chase';
@@ -134,6 +136,7 @@ async function loadMission() {
     resetSteps();
     loadingEl.classList.remove('hidden');
     let current = 'config';
+    let stale = false;
     try {
       step('config', 'run');
       if (!config) config = await getJSON('config');
@@ -141,6 +144,7 @@ async function loadMission() {
 
       current = 'mission'; step('mission', 'run');
       const m = await getJSON('api/mission');
+      loadingId = m.id;
       step('mission', 'done');
 
       current = 'terrain'; step('terrain', 'run');
@@ -171,18 +175,44 @@ async function loadMission() {
       loadingEl.classList.add('hidden');
       post('ready', { mission: m.id });
     } catch (err) {
-      console.error(err);
-      step(current, 'fail');
-      $('load-error').textContent = String(err.message || err);
-      post('error', { message: String(err.message || err) });
+      if (err.status === 409) {
+        // The server switched missions while we were fetching: not a failure, just start over.
+        stale = true;
+      } else {
+        console.error(err);
+        step(current, 'fail');
+        $('load-error').textContent = String(err.message || err);
+        post('error', { message: String(err.message || err) });
+      }
     } finally {
+      // Reload once more if this load went stale, or a newer mission was announced meanwhile.
+      const again = stale || (serverMission !== null && loadingId !== null && serverMission !== loadingId);
       loading = null;
+      loadingId = null;
+      if (again) loadMission();
     }
   })();
   return loading;
 }
 
-function nextFrame() { return new Promise((r) => requestAnimationFrame(() => r())); }
+/** Server announced mission `id`: load it now, or right after the load in flight. */
+function noteServerMission(id) {
+  if (!id) return;
+  serverMission = id;
+  if (!loading && (!mission || id !== mission.id)) loadMission();
+}
+
+/**
+ * Yield one frame before the heavy mesh build. requestAnimationFrame never fires in a hidden tab
+ * or iframe, so a timeout keeps the load from stalling there.
+ */
+function nextFrame() {
+  return new Promise((r) => {
+    const done = () => { clearTimeout(timer); r(); };
+    const timer = setTimeout(done, 50);
+    requestAnimationFrame(done);
+  });
+}
 
 function buildWorld(m, g) {
   if (world) { scene.remove(world); disposeTree(world); }
@@ -360,7 +390,7 @@ socket.on('hello', (msg) => {
 
 socket.on('telemetry', (t) => {
   if (!mission || t.mission !== mission.id) {
-    if (!loading && t.mission && (!mission || t.mission !== mission.id)) loadMission();
+    noteServerMission(t.mission);
     return;
   }
   buffer.push(t);
@@ -378,9 +408,7 @@ socket.on('telemetry', (t) => {
   }
 });
 
-socket.on('mission_loaded', (msg) => {
-  if (!loading && (!mission || msg.mission !== mission.id)) loadMission();
-});
+socket.on('mission_loaded', (msg) => noteServerMission(msg.mission));
 
 for (const kind of ['physics_event', 'avoid_event']) {
   socket.on(kind, (ev) => {

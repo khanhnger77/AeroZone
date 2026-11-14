@@ -156,6 +156,64 @@ def test_mission_description_and_terrain_bins(terrain_tif, tmp_path):
     run(body, sim)
 
 
+def test_stale_mission_requests_get_409(terrain_tif, tmp_path):
+    """A page still loading mission A must not receive mission B's terrain or imagery."""
+    sim = make_sim(terrain_tif, tmp_path)
+
+    async def body(c):
+        a = await (await c.post("/sim/api/mission", json={"route": ROUTE})).json()
+        ok = await c.get(f"/sim/api/terrain/corridor.bin?m={a['id']}")
+        assert ok.status == 200
+        assert len(await ok.read()) == a["terrain"]["corridor"]["nx"] * a["terrain"]["corridor"]["ny"] * 4
+
+        b = await (await c.post("/sim/api/mission", json={"route": ALT})).json()
+        assert b["id"] != a["id"]
+        for url in (f"/sim/api/terrain/corridor.bin?m={a['id']}",
+                    f"/sim/api/terrain/context.bin?m={a['id']}",
+                    f"/sim/api/texture/corridor.jpg?m={a['id']}"):
+            resp = await c.get(url)
+            assert resp.status == 409, url
+            assert (await resp.json())["mission"] == b["id"]
+        # Current id, or no id at all (older clients), still serve the loaded mission.
+        assert (await c.get(f"/sim/api/terrain/corridor.bin?m={b['id']}")).status == 200
+        assert (await c.get("/sim/api/terrain/corridor.bin")).status == 200
+    run(body, sim)
+
+
+def test_tick_does_not_interleave_with_mission_install(terrain_tif, tmp_path):
+    """No await between reading the pose and stepping: an install during a broadcast is harmless."""
+    sim = make_sim(terrain_tif, tmp_path)
+
+    async def body(c):
+        await c.post("/sim/api/mission", json={"route": ROUTE})
+        sim.nav.start()
+        calls = []
+        real_update = sim.router.update
+
+        def update(*args, **kwargs):
+            calls.append(("update", sim.mission_id))
+            return real_update(*args, **kwargs)
+
+        async def broadcast(msg, topic):
+            calls.append(("broadcast", sim.mission_id))
+
+        sim.router.update = update
+        sim.broadcast = broadcast
+        sim.avoid.tick = lambda *a: {"type": "avoid_event", "mode": "avoid", "detail": "test"}
+        await sim.tick(0.02)
+        # Old order was broadcast(event) -> update -> broadcast(telemetry): a yield mid-step.
+        assert [k for k, _ in calls] == ["update", "broadcast", "broadcast"]
+    run(body, sim)
+
+
+def test_static_files_revalidate(terrain_tif, tmp_path):
+    async def body(c):
+        resp = await c.get("/sim/js/main.js")
+        assert resp.status == 200
+        assert resp.headers["Cache-Control"] == "no-cache"
+    run(body, make_sim(terrain_tif, tmp_path))
+
+
 def test_demo_mission_needs_planner(terrain_tif, tmp_path):
     async def body(c):
         resp = await c.get("/sim/api/mission")
