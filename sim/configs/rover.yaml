@@ -1,0 +1,31 @@
+name: Perseverance
+dynamics:
+  mass_kg: 1025
+  wheel_mass_kg: 10
+  chassis_size_m: [2.9, 2.7, 0.9]
+  chassis_clearance_m: 0.66
+  wheel_radius_m: 0.2625
+  wheel_width_m: 0.40
+  wheel_positions_m:
+    - [ 1.10,  1.20]
+    - [ 0.00,  1.20]
+    - [-1.10,  1.20]
+    - [ 1.10, -1.20]
+    - [ 0.00, -1.20]
+    - [-1.10, -1.20]
+  steerable: [true, false, true, true, false, true]
+  wheel_max_torque_nm: 300
+  steer_max_torque_nm: 400
+  steer_limit_rad: 1.6
+  frontal_area_m2: 4.0
+limits:
+  real_max_speed_m_s: 0.042
+  demo_speeds_m_s: [0.042, 0.25, 0.5, 1.0, 2.0]
+  default_speed_m_s: 1.0
+  max_yaw_rate_rad_s: 0.35
+  max_tilt_deg: 30
+navigator:
+  lookahead_m: 4.0
+  lookahead_per_speed_s: 3.0
+  goal_tolerance_m: 2.0
+  slow_radius_m: 8.0

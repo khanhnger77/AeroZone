@@ -1,0 +1,86 @@
+{
+  "three_version": "0.170.0",
+  "assets": [
+    {
+      "path": "web/vendor/three/three.module.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "bytes": 1314681,
+      "sha256": "ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb",
+      "credit": "three.js authors",
+      "licence": "MIT",
+      "time": "2026-11-14T02:29:19Z"
+    },
+    {
+      "path": "web/vendor/three/addons/loaders/GLTFLoader.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js",
+      "bytes": 110273,
+      "sha256": "45139faddd5aaf48ed2d62203d976e5cbd703db1a592de40527f9f6cf58abd44",
+      "credit": "three.js authors",
+      "licence": "MIT",
+      "time": "2026-11-14T02:29:19Z"
+    },
+    {
+      "path": "web/vendor/three/addons/loaders/DRACOLoader.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/DRACOLoader.js",
+      "bytes": 13699,
+      "sha256": "8a90b39b6c0d7faa70410cdd19348029a83a9f2d5f71e11b665a5f48330a4c72",
+      "credit": "three.js authors",
+      "licence": "MIT",
+      "time": "2026-11-14T02:29:20Z"
+    },
+    {
+      "path": "web/vendor/three/addons/controls/OrbitControls.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js",
+      "bytes": 32134,
+      "sha256": "80efaadea4f8a636a65fb0bd08bfef62f3d93a0bb94e2e7500f23176c5c07f4e",
+      "credit": "three.js authors",
+      "licence": "MIT",
+      "time": "2026-11-14T02:29:20Z"
+    },
+    {
+      "path": "web/vendor/three/addons/utils/BufferGeometryUtils.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js",
+      "bytes": 31768,
+      "sha256": "c25b7930e570e9ec56173cd3b866ec8d2e10016630db3937efb439daf1cedbf6",
+      "credit": "three.js authors",
+      "licence": "MIT",
+      "time": "2026-11-14T02:29:20Z"
+    },
+    {
+      "path": "web/vendor/three/addons/libs/draco/gltf/draco_decoder.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/draco_decoder.js",
+      "bytes": 512465,
+      "sha256": "8625489da79a805f4f2a7d511c3e52d8b4085608a9d2a4d5f4f9de5db0aea04f",
+      "credit": "Google Draco authors (bundled with three.js)",
+      "licence": "Apache-2.0",
+      "time": "2026-11-14T02:29:20Z"
+    },
+    {
+      "path": "web/vendor/three/addons/libs/draco/gltf/draco_decoder.wasm",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/draco_decoder.wasm",
+      "bytes": 192420,
+      "sha256": "a680d927bed9cb864ddbd63521868891af2bfbe755092761b4837487618df8ac",
+      "credit": "Google Draco authors (bundled with three.js)",
+      "licence": "Apache-2.0",
+      "time": "2026-11-14T02:29:21Z"
+    },
+    {
+      "path": "web/vendor/three/addons/libs/draco/gltf/draco_wasm_wrapper.js",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js",
+      "bytes": 58456,
+      "sha256": "8bb2952d2ba7d67e1414f8df819410cb0434a666be53f671fff75f68843d76f6",
+      "credit": "Google Draco authors (bundled with three.js)",
+      "licence": "Apache-2.0",
+      "time": "2026-11-14T02:29:21Z"
+    },
+    {
+      "path": "rover/model/perseverance.glb",
+      "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Mars%202020%20Perseverance%20Rover/Mars%202020%20Perseverance%20Rover.glb",
+      "bytes": 4987176,
+      "sha256": "10db7c03a5e63a5a3b3e7baa6243aa4918ba045fa8ff0a731d0217491adc727f",
+      "credit": "NASA/JPL-Caltech, NASA 3D Resources: Mars 2020 Perseverance Rover",
+      "licence": "NASA media usage guidelines (not subject to copyright in the US; no endorsement implied)",
+      "time": "2026-11-14T02:29:23Z"
+    }
+  ]
+}
