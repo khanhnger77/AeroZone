@@ -1,5 +1,6 @@
 import type { LayersManifest } from '../types'
 import { Legend, Section, Stat, PanelHeader } from './ui'
+import InfoTooltip from './InfoTooltip'
 
 export default function SafetyPanel({ manifest }: { manifest: LayersManifest | null }) {
   const hz = manifest?.raster_layers.find((l) => l.id === 'hazard')
@@ -70,14 +71,18 @@ export default function SafetyPanel({ manifest }: { manifest: LayersManifest | n
         </p>
       </Section>
 
-      <Section title="Thresholds & uncertainty">
-        <ul className="list-disc space-y-1 pl-4 text-[11px] leading-snug text-muted">
+      <Section title="Thresholds & uncertainty" right={<InfoTooltip label="Thresholds and uncertainty details">
+        <div className="mb-2 text-xs font-semibold text-ink">Thresholds & uncertainty</div>
+        <ul className="list-disc space-y-2 pl-4">
           <li>Slope risk: {m.slope_stops[0].map((s, i) => `${s}°→${m.slope_stops[1][i]}`).join(', ')}.</li>
           <li>Roughness risk: {m.roughness_stops[0].map((s, i) => `${s} m→${m.roughness_stops[1][i]}`).join(', ')}.</li>
           <li>DTM post spacing 1 m; effective resolution is coarser (~3 m). Boulders below a few metres are not resolved.</li>
           <li>Roughness values below ~0.1 m approach the DTM vertical noise.</li>
           <li>Alignment check: DTM vs rover-reported elevation, median difference ≈ 0.00 m (n=612); rover fixes are tied to HiRISE basemaps, so this confirms consistency, not independent accuracy.</li>
         </ul>
+      </InfoTooltip>}>
+        <p className="text-xs leading-relaxed text-muted">No-go slope ≥ <span className="text-ink">{m.no_go_slope_deg}°</span> · terrain detail <span className="text-ink">~3 m</span>.</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted">Small boulders and fine roughness may be unresolved. Hover ⓘ for thresholds and accuracy limits.</p>
       </Section>
     </div>
   )

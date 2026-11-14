@@ -1,4 +1,4 @@
-import { Compass, FlaskConical, Info, Layers, Route, ShieldAlert } from 'lucide-react'
+import { Compass, FlaskConical, Info, Layers, Route, ShieldAlert, CloudSun } from 'lucide-react'
 import type { Tab } from '../types'
 
 const ITEMS: { id: Tab; label: string; Icon: typeof Compass }[] = [
@@ -7,6 +7,7 @@ const ITEMS: { id: Tab; label: string; Icon: typeof Compass }[] = [
   { id: 'safety', label: 'Safety', Icon: ShieldAlert },
   { id: 'science', label: 'Science', Icon: FlaskConical },
   { id: 'mission', label: 'Mission Planner', Icon: Route },
+  { id: 'weather', label: 'Weather', Icon: CloudSun },
 ]
 
 interface Props {

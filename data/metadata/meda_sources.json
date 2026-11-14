@@ -1,0 +1,607 @@
+{
+  "source": "https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/PERSEVERANCE/meda.html",
+  "document": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/document/meda_env_rdr_sis.pdf",
+  "retrieved_utc": "2026-11-14T06:51:57+00:00",
+  "products": [
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1186/WE__1186___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1186/WE__1186___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1186/WE__1186___________CAL_ATS_________________P01.CSV",
+      "sha256": "13a0212fe3728cae5a076f391f5185e6e22fff535ad1432f80e606a2b1145d33",
+      "bytes": 5428107,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-20T18:54:55.757Z",
+      "end_utc": "2024-06-21T19:34:29.463Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1186/WE__1186___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1186/WE__1186___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1186/WE__1186___________DER_PS__________________P01.CSV",
+      "sha256": "c4776c8563a6a94f8d5903501a0e7ffc3926b06a9229c88bc8e9ba3f3598b4bc",
+      "bytes": 3699333,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-20T18:54:55.757Z",
+      "end_utc": "2024-06-21T19:34:29.463Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1187/WE__1187___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1187/WE__1187___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1187/WE__1187___________CAL_ATS_________________P01.CSV",
+      "sha256": "a27c6caa8b2dcb841ce3314cfaaecc2357896903eee80011268dbc748cf9bf75",
+      "bytes": 5427949,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-21T19:34:30.463Z",
+      "end_utc": "2024-06-22T20:14:05.169Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1187/WE__1187___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1187/WE__1187___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1187/WE__1187___________DER_PS__________________P01.CSV",
+      "sha256": "abb8c6e4ce3441153ef47712a2ce2c720142d779f4e239c642920b023484203f",
+      "bytes": 3699222,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-21T19:34:30.463Z",
+      "end_utc": "2024-06-22T20:14:05.169Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1188/WE__1188___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1188/WE__1188___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1188/WE__1188___________CAL_ATS_________________P01.CSV",
+      "sha256": "336b746be0c333562f9da544a205ee5cb060410bac020287ccf54fd9366ca659",
+      "bytes": 3058818,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-22T20:14:06.169Z",
+      "end_utc": "2024-06-23T20:08:16.853Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1188/WE__1188___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1188/WE__1188___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1188/WE__1188___________DER_PS__________________P01.CSV",
+      "sha256": "6a09d37cb70cea254b1627ec017d83bbbce280c0c0658410ae6b3514044fcdae",
+      "bytes": 2059782,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-22T20:14:06.169Z",
+      "end_utc": "2024-06-23T20:07:45.853Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1189/WE__1189___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1189/WE__1189___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1189/WE__1189___________CAL_ATS_________________P01.CSV",
+      "sha256": "3ad005eb6d7c866e8fb86389cb6cc24b364fd80a4b532e2078d3e96f1fa961c1",
+      "bytes": 2058520,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-23T20:53:44.875Z",
+      "end_utc": "2024-06-24T20:47:51.559Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1189/WE__1189___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1189/WE__1189___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1189/WE__1189___________DER_PS__________________P01.CSV",
+      "sha256": "993863a9dbdca6a885cb3cb18187e7ebde7da65b303d2d0a792a0ab21122b96f",
+      "bytes": 1364853,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-23T20:53:47.875Z",
+      "end_utc": "2024-06-24T20:47:20.558Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1190/WE__1190___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1190/WE__1190___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1190/WE__1190___________CAL_ATS_________________P01.CSV",
+      "sha256": "fa038fbc33508b7665e3d36d6f3c0a2f783d483b5b1979609856164cedbda81c",
+      "bytes": 2056861,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-24T21:33:19.580Z",
+      "end_utc": "2024-06-25T21:27:27.264Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1190/WE__1190___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1190/WE__1190___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1190/WE__1190___________DER_PS__________________P01.CSV",
+      "sha256": "89f25a96ebc03fe99c996e95edd0b4edc2829076b1e7073f398e235bf23b4472",
+      "bytes": 1363719,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-24T21:33:22.580Z",
+      "end_utc": "2024-06-25T21:26:56.264Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1191/WE__1191___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1191/WE__1191___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1191/WE__1191___________CAL_ATS_________________P01.CSV",
+      "sha256": "0897efa3e721f51fd76b13c995273c91a49678a06a6118fc9002e6ae3ae3027f",
+      "bytes": 1843008,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-25T22:12:55.286Z",
+      "end_utc": "2024-06-26T22:07:01.970Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1191/WE__1191___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1191/WE__1191___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1191/WE__1191___________DER_PS__________________P01.CSV",
+      "sha256": "5c16533680a60ce4f2ce83a9dd83d7e7e38478a038f6a52482d95319a0049268",
+      "bytes": 1215705,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-25T22:12:58.286Z",
+      "end_utc": "2024-06-26T22:06:30.970Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1192/WE__1192___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1192/WE__1192___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1192/WE__1192___________CAL_ATS_________________P01.CSV",
+      "sha256": "3cfc5b565e63570c17bc18f1637853ef81421fd3a8e9adc2fe983e20614a7ef7",
+      "bytes": 2306343,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-26T22:52:29.992Z",
+      "end_utc": "2024-06-27T22:46:37.676Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1192/WE__1192___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1192/WE__1192___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1192/WE__1192___________DER_PS__________________P01.CSV",
+      "sha256": "f3c48be6ba58851cd4bb6ea7c2472f59d471b07a8cfe4326ac614c0b01a7805d",
+      "bytes": 1536087,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-26T22:52:32.992Z",
+      "end_utc": "2024-06-27T22:46:06.676Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1193/WE__1193___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1193/WE__1193___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1193/WE__1193___________CAL_ATS_________________P01.CSV",
+      "sha256": "2f0af7f41f42512b21044b089a42a254468de47ca39ba50ad34e33479235dd12",
+      "bytes": 3106771,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-27T23:32:05.698Z",
+      "end_utc": "2024-06-29T00:11:36.403Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1193/WE__1193___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1193/WE__1193___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1193/WE__1193___________DER_PS__________________P01.CSV",
+      "sha256": "b6bad51c42ee514b3392534fc47fa29e941c01c89315975c4ec552ad83ba6699",
+      "bytes": 2092233,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-27T23:32:08.698Z",
+      "end_utc": "2024-06-29T00:11:36.403Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1194/WE__1194___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1194/WE__1194___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1194/WE__1194___________CAL_ATS_________________P01.CSV",
+      "sha256": "1d2d0186d247a4d08fb2322ae583ad48790de12d5102a7bd2cfc3248d4a1b669",
+      "bytes": 3843525,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-29T00:11:37.403Z",
+      "end_utc": "2024-06-29T23:55:31.083Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1194/WE__1194___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1194/WE__1194___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1194/WE__1194___________DER_PS__________________P01.CSV",
+      "sha256": "f5644b2c091fd80d7db84963c2e762ac9abb43f9c04c0c7e20b7d69fd3d689eb",
+      "bytes": 2605341,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-29T00:11:37.403Z",
+      "end_utc": "2024-06-29T23:55:00.082Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1195/WE__1195___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1195/WE__1195___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1195/WE__1195___________CAL_ATS_________________P01.CSV",
+      "sha256": "0733233bdf15c19ae8e4f538443df6348d7727b9da903749fbfc93335f33a8b2",
+      "bytes": 3843051,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-06-30T00:51:16.109Z",
+      "end_utc": "2024-07-01T01:30:46.815Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1195/WE__1195___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1195/WE__1195___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1195/WE__1195___________DER_PS__________________P01.CSV",
+      "sha256": "f7388191ddd5812349f20dd691bf5280c0815235a5b59872bed96d649c341bd7",
+      "bytes": 2604693,
+      "column": "PRESSURE",
+      "start_utc": "2024-06-30T00:51:19.109Z",
+      "end_utc": "2024-07-01T01:30:46.815Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1196/WE__1196___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1196/WE__1196___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1196/WE__1196___________CAL_ATS_________________P01.CSV",
+      "sha256": "49ce8e3d8e59e8c0066fb8d854d9961abcb5bca98faa14363f61f7ba6ab72fb6",
+      "bytes": 3843525,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-01T01:30:47.815Z",
+      "end_utc": "2024-07-02T01:14:41.494Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1196/WE__1196___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1196/WE__1196___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1196/WE__1196___________DER_PS__________________P01.CSV",
+      "sha256": "b74b9de9d653e7b184cdcfc168850a8f00cf4a1b601b52b72fb337ee8dc3c65e",
+      "bytes": 2605341,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-01T01:30:47.815Z",
+      "end_utc": "2024-07-02T01:14:10.494Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1197/WE__1197___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1197/WE__1197___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1197/WE__1197___________CAL_ATS_________________P01.CSV",
+      "sha256": "b9fe9f7904a1f2ea5577049db980c9fe6ce8609c5a88869604377028c97e2c2e",
+      "bytes": 2115795,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-02T02:10:26.521Z",
+      "end_utc": "2024-07-03T01:54:16.200Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1197/WE__1197___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1197/WE__1197___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1197/WE__1197___________DER_PS__________________P01.CSV",
+      "sha256": "b248bfd4217d325cb6bb52bd995c9a1ed4ba421e8749b70b1b810faaed24a2cd",
+      "bytes": 1411347,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-02T02:10:29.521Z",
+      "end_utc": "2024-07-03T01:53:45.200Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1198/WE__1198___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1198/WE__1198___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1198/WE__1198___________CAL_ATS_________________P01.CSV",
+      "sha256": "f58eaf73f1c384854fa0e90781e37428aa69c261578ad16236c8748d8346ac76",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-03T02:50:01.226Z",
+      "end_utc": "2024-07-04T02:33:51.906Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1198/WE__1198___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1198/WE__1198___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1198/WE__1198___________DER_PS__________________P01.CSV",
+      "sha256": "528242f80715433fcb79d3a71aa29010b3ffa8fac078f2de98896abd6400a5ad",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-03T02:50:04.227Z",
+      "end_utc": "2024-07-04T02:33:20.905Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1199/WE__1199___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1199/WE__1199___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1199/WE__1199___________CAL_ATS_________________P01.CSV",
+      "sha256": "9cff5d81ee6bebda28a1ad98d2670956ae11f732cec6c4595282d310f28a4995",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-04T03:29:36.932Z",
+      "end_utc": "2024-07-05T03:13:27.611Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1199/WE__1199___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1199/WE__1199___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1199/WE__1199___________DER_PS__________________P01.CSV",
+      "sha256": "3050f1ec1199b4a43edbc20b552fbe9f99a2298b9d2082b189f57fa7bfa3ca61",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-04T03:29:39.932Z",
+      "end_utc": "2024-07-05T03:12:56.611Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1200/WE__1200___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1200/WE__1200___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1200/WE__1200___________CAL_ATS_________________P01.CSV",
+      "sha256": "fdd2ec326d914a44c6203e1bd842f9462f9ae9330657ff5fb435afbf0ac3c235",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-05T04:09:11.638Z",
+      "end_utc": "2024-07-06T03:53:02.317Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1200/WE__1200___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1200/WE__1200___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1200/WE__1200___________DER_PS__________________P01.CSV",
+      "sha256": "393086ebc3d16d2e84d1e550255f444db0ff142c0edcddf904073917a12227fb",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-05T04:09:14.638Z",
+      "end_utc": "2024-07-06T03:52:31.317Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1201/WE__1201___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1201/WE__1201___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1201/WE__1201___________CAL_ATS_________________P01.CSV",
+      "sha256": "eb6313d2d01ccde77b358aafa2567edfde93be4d632b0c7ffd3aeb29bde4c1c6",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-06T04:48:47.344Z",
+      "end_utc": "2024-07-07T04:32:38.023Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1201/WE__1201___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1201/WE__1201___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1201/WE__1201___________DER_PS__________________P01.CSV",
+      "sha256": "93490efad4aa78d0cb506cc2706792ddd65d090272cc8659224695b348756a66",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-06T04:48:50.344Z",
+      "end_utc": "2024-07-07T04:32:07.023Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1202/WE__1202___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1202/WE__1202___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1202/WE__1202___________CAL_ATS_________________P01.CSV",
+      "sha256": "dc30d3eec2ee193cfec02852d1176a899757661c1b9bd595c6c158b96b72fd4a",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-07T05:28:23.050Z",
+      "end_utc": "2024-07-08T05:12:12.729Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1202/WE__1202___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1202/WE__1202___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1202/WE__1202___________DER_PS__________________P01.CSV",
+      "sha256": "d24333f5a964be3beca6519dd9cc6e0249a175ca2dd2c32e63d5982c4811fd83",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-07T05:28:26.050Z",
+      "end_utc": "2024-07-08T05:11:41.728Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1203/WE__1203___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1203/WE__1203___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1203/WE__1203___________CAL_ATS_________________P01.CSV",
+      "sha256": "4d392636b9367ace8a909c220b24d3430604e284b76d6005ec7c1177389ce07f",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-08T06:07:57.755Z",
+      "end_utc": "2024-07-09T05:51:48.434Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1203/WE__1203___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1203/WE__1203___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1203/WE__1203___________DER_PS__________________P01.CSV",
+      "sha256": "133c0d0f63c0bc7adc2eb4a14d9f645052ab053488bca57fdcf3dadb9ecfdd97",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-08T06:08:00.755Z",
+      "end_utc": "2024-07-09T05:51:17.434Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1204/WE__1204___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1204/WE__1204___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1204/WE__1204___________CAL_ATS_________________P01.CSV",
+      "sha256": "7d91cf388b0a5c83e413d092f578a8db041a3d2c91e74c7f27338dcdf55138a1",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-09T06:47:33.461Z",
+      "end_utc": "2024-07-10T06:31:23.140Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1204/WE__1204___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1204/WE__1204___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1204/WE__1204___________DER_PS__________________P01.CSV",
+      "sha256": "74a18a39f99b20189f3eb850f8cf9d5027c852b4dfb5d13989b6c2f8e6b9044b",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-09T06:47:36.461Z",
+      "end_utc": "2024-07-10T06:30:52.140Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1205/WE__1205___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1205/WE__1205___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1205/WE__1205___________CAL_ATS_________________P01.CSV",
+      "sha256": "159cdab36ef9a98db8ac67579382b327d94a4d9314134cf1bdfa2d7633c16fda",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-10T07:27:08.167Z",
+      "end_utc": "2024-07-11T07:10:58.846Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1205/WE__1205___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1205/WE__1205___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1205/WE__1205___________DER_PS__________________P01.CSV",
+      "sha256": "3afeeaf4b4abe949de2418ad7d3bdc9a6fcaedde4fc0f307db45b5a4737d901d",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-10T07:27:11.167Z",
+      "end_utc": "2024-07-11T07:10:27.846Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1206/WE__1206___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1206/WE__1206___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1206/WE__1206___________CAL_ATS_________________P01.CSV",
+      "sha256": "248e3f9e5d7c6e567a432d70da145c373361b7d249ae693f900eb1cf5783390a",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-11T08:06:43.873Z",
+      "end_utc": "2024-07-12T07:50:33.552Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1206/WE__1206___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1206/WE__1206___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1206/WE__1206___________DER_PS__________________P01.CSV",
+      "sha256": "39bab3f21729ed8f0ad87536049ee31baa389ca031e8d7e96df40909c23457d5",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-11T08:06:46.873Z",
+      "end_utc": "2024-07-12T07:50:02.551Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1207/WE__1207___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1207/WE__1207___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1207/WE__1207___________CAL_ATS_________________P01.CSV",
+      "sha256": "5c32e84ea26dfd577c0a0f7813bf086c0196d43f30bdd4456fc756a9a498ba37",
+      "bytes": 580588,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-12T08:46:18.578Z",
+      "end_utc": "2024-07-13T05:23:25.168Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1207/WE__1207___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1207/WE__1207___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1207/WE__1207___________DER_PS__________________P01.CSV",
+      "sha256": "7953b0444b3aca6c4b650ecc43cc0a8240449ba4125d9b8933847122346e0c5a",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-12T08:46:21.578Z",
+      "end_utc": "2024-07-13T08:29:38.257Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1208/WE__1208___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1208/WE__1208___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1208/WE__1208___________CAL_ATS_________________P01.CSV",
+      "sha256": "357ee92d0d72da4a8af487bb36aa817cc61fb1916080063d48b3dd0215d1d3fa",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-13T09:25:54.284Z",
+      "end_utc": "2024-07-14T09:09:43.963Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1208/WE__1208___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1208/WE__1208___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1208/WE__1208___________DER_PS__________________P01.CSV",
+      "sha256": "11bfd9245cb3748bb5026daa298fb94d6323c43a3900a8f6016ed8fef42fbb17",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-13T09:25:57.284Z",
+      "end_utc": "2024-07-14T09:09:12.963Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1209/WE__1209___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1209/WE__1209___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1209/WE__1209___________CAL_ATS_________________P01.CSV",
+      "sha256": "d1ad302049aef5c4c41aa47b4dd87e148b9c05372aa5f52b5877878dae06726b",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-14T10:05:28.990Z",
+      "end_utc": "2024-07-15T09:49:19.669Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1209/WE__1209___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1209/WE__1209___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1209/WE__1209___________DER_PS__________________P01.CSV",
+      "sha256": "25d232264c5ac31f7a4442a4a78d26c7767a2283a8eb09d21082796be075d0df",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-14T10:05:31.990Z",
+      "end_utc": "2024-07-15T09:48:48.669Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1210/WE__1210___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1210/WE__1210___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1210/WE__1210___________CAL_ATS_________________P01.CSV",
+      "sha256": "4b46695c917a1895d394a193ecd8975241ad93faf1f810d1eacd839ea77eb884",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-15T10:45:04.696Z",
+      "end_utc": "2024-07-16T10:28:54.375Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1210/WE__1210___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1210/WE__1210___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1210/WE__1210___________DER_PS__________________P01.CSV",
+      "sha256": "a0e07e4c9c3b1df1f68b2f53b04f9bdcb34b9b0b55749d3af421ae31dd8b9b67",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-15T10:45:07.696Z",
+      "end_utc": "2024-07-16T10:28:23.374Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1211/WE__1211___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1211/WE__1211___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1211/WE__1211___________CAL_ATS_________________P01.CSV",
+      "sha256": "c0bb225ba8c2204c5cf72f93f645af3e391f660de432c87e5c619ff0c7396c37",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-16T11:24:39.401Z",
+      "end_utc": "2024-07-17T11:08:30.080Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1211/WE__1211___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1211/WE__1211___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1211/WE__1211___________DER_PS__________________P01.CSV",
+      "sha256": "168755ce56e002388c5a5b348e92c05e6998dab268d3a23028719d7af4b6d737",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-16T11:24:42.401Z",
+      "end_utc": "2024-07-17T11:07:59.080Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1212/WE__1212___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1212/WE__1212___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1212/WE__1212___________CAL_ATS_________________P01.CSV",
+      "sha256": "9b4862d93f5153f4f3d03cab790a4b8aa5425b077d59f8fee0359c33cabe4eb4",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-17T12:04:15.107Z",
+      "end_utc": "2024-07-18T11:48:05.786Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1212/WE__1212___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1212/WE__1212___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1212/WE__1212___________DER_PS__________________P01.CSV",
+      "sha256": "d7f87ba411bebeea9427a985ed4539823c7d6a45b061e79899bf03e1caf0e903",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-17T12:04:18.107Z",
+      "end_utc": "2024-07-18T11:47:34.786Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1213/WE__1213___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1213/WE__1213___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1213/WE__1213___________CAL_ATS_________________P01.CSV",
+      "sha256": "2791dfb88fa59070b8a3d86099c04bf0f58479705c4a1e26f8a33d6c5a2ff244",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-18T12:43:49.813Z",
+      "end_utc": "2024-07-19T12:27:40.492Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1213/WE__1213___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1213/WE__1213___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1213/WE__1213___________DER_PS__________________P01.CSV",
+      "sha256": "1e679df3656c196c5100c1ac24a385c35c320b9e74934f532a00cb628b592e92",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-18T12:43:52.813Z",
+      "end_utc": "2024-07-19T12:27:09.492Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1214/WE__1214___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1214/WE__1214___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1214/WE__1214___________CAL_ATS_________________P01.CSV",
+      "sha256": "561ef8bba7ae504296ae4c21b71f83a1e421b7e248fbf869e11a9076fcd3123f",
+      "bytes": 673176,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-19T13:23:25.519Z",
+      "end_utc": "2024-07-20T13:07:16.198Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1214/WE__1214___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1214/WE__1214___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1214/WE__1214___________DER_PS__________________P01.CSV",
+      "sha256": "354f3a394d52d324aedaa03a65bdbcbf5418da68ea5a6be040ca142a184f34d3",
+      "bytes": 416073,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-19T13:23:28.519Z",
+      "end_utc": "2024-07-20T13:06:45.198Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1215/WE__1215___________CAL_ATS_________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_calibrated_env/sol_1140_1259/sol_1215/WE__1215___________CAL_ATS_________________P01.xml",
+      "file": "data/raw/weather/meda/data_calibrated_env/sol_1215/WE__1215___________CAL_ATS_________________P01.CSV",
+      "sha256": "787a125313c94b31999fc79b9507b79ea96f1ec63eec2f4964319c8513886b0c",
+      "bytes": 1480477,
+      "column": "ATS_LOCAL_TEMP1",
+      "start_utc": "2024-07-20T14:03:01.224Z",
+      "end_utc": "2024-07-21T13:46:50.904Z"
+    },
+    {
+      "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1215/WE__1215___________DER_PS__________________P01.CSV",
+      "xml_url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/data_derived_env/sol_1140_1259/sol_1215/WE__1215___________DER_PS__________________P01.xml",
+      "file": "data/raw/weather/meda/data_derived_env/sol_1215/WE__1215___________DER_PS__________________P01.CSV",
+      "sha256": "a4007aa868711d2af500ea6aa6330d86c118a2bd35329c9913475522e00bf41f",
+      "bytes": 969735,
+      "column": "PRESSURE",
+      "start_utc": "2024-07-20T14:03:04.224Z",
+      "end_utc": "2024-07-21T13:46:19.903Z"
+    }
+  ]
+}

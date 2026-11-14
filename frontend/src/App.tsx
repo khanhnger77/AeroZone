@@ -25,6 +25,7 @@ import PlaceCard, { type PlaceViewTab, type SelectedPlace } from './components/P
 // recharts is only needed once a route exists -> load it on demand (separate chunk)
 const ElevationProfile = lazy(() => import('./components/ElevationProfile'))
 const PlaceViewer = lazy(() => import('./components/PlaceViewer'))
+const WeatherPanel = lazy(() => import('./components/WeatherPanel'))
 
 const INITIAL_LAYERS: MapLayerState = {
   base: 'viking',
@@ -62,6 +63,7 @@ export default function App() {
   const [place, setPlace] = useState<SelectedPlace | null>(null)
   const [placeView, setPlaceView] = useState<PlaceViewTab | null>(null)
 
+  const [weatherSol, setWeatherSol] = useState<number | null>(null)
   const [selectedSample, setSelectedSample] = useState<number | null>(null)
   const [flyTo, setFlyTo] = useState<{ lon: number; lat: number; zoom: number; key: number } | null>(null)
 
@@ -207,6 +209,7 @@ export default function App() {
       {tab === 'explorer' && <ExplorerPanel manifest={manifest} onFly={(lon, lat, z) => { fly(lon, lat, z); if (mobile) setPanelOpen(false) }} />}
       {tab === 'layers' && <LayerPanel manifest={manifest} layers={layers} setLayers={setLayers} detailed />}
       {tab === 'safety' && <SafetyPanel manifest={manifest} />}
+      {tab === 'weather' && <Suspense fallback={<div className="p-5 text-sm text-muted">Loading weather…</div>}><WeatherPanel requestedSol={weatherSol} onSelectSol={setWeatherSol} onFly={point => fly(point.lon, point.lat, 16)} /></Suspense>}
       {tab === 'science' && (
         <SciencePanel samples={samples} selected={selectedSample} onSelect={setSelectedSample}
           onFly={(lon, lat) => fly(lon, lat, mobile ? 16 : 17)} onSetTarget={setTarget} />
@@ -248,6 +251,7 @@ export default function App() {
       onPanoramaClick={(point) => { setPickMode(null); setPlace(point); setPlaceView('panorama') }}
       tracking={!!demo} rover={telemetry} rocks={demo?.obstacles.rocks} craters={demo?.obstacles.craters} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
       route={route} selectedRoute={selectedRoute} start={start} end={end} pickMode={pickMode}
+      onWaypointClick={sol => { if (demo || demoLoading) return; setWeatherSol(sol); setTab('weather'); setPanelOpen(true); setPlace(null); setPlaceView(null) }}
       onViewportChange={setViewport} selectedSample={selectedSample} hoverPoint={hoverPoint} flyTo={flyTo} onCursor={onCursor} onMapClick={onMapClick}
       crisp={zoom >= 16}
       fitPadding={mobile ? [[24, 80], [24, 230]] : [[panelOpen ? 470 : 100, 90], [260, 230]]}
