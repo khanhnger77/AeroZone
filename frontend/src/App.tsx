@@ -850,7 +850,7 @@ export default function App() {
         <StatusBar cursor={demo && telemetry ? { lon: telemetry.lon, lat: telemetry.lat } : cursor} info={demo ? null : info} vehicle={!!(demo && telemetry)} zoom={zoom} apiOk={apiOk} center={<MapLegend visible={visibleTypes} onToggle={toggleType} />} />
       </div>
 
-      {!demo && <OdysseyCopilot onAction={handleCopilotAction} currentLocation={cursor ?? start ?? LANDING_SITE} />}
+      {!demo && <OdysseyCopilot onAction={handleCopilotAction} currentLocation={cursor ?? start ?? LANDING_SITE} locations={locations} />}
 
       {briefing && <Briefing manifest={manifest} nSamples={samples?.features.length ?? 0} onEnter={closeBriefing} />}
     </div>

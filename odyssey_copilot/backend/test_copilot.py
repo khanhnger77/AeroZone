@@ -462,5 +462,40 @@ class TestOdysseyCopilotRouter(unittest.TestCase):
             self.skipTest(f"TestClient skipped: {e}")
 
 
+class TestSavedLocations(unittest.TestCase):
+    """Names of points saved on the map (HQ_1, Cargo_1...) must resolve to their coordinates."""
+
+    LOCS = [
+        {"name": "HQ_1", "type": "HQ", "lon": 77.4300, "lat": 18.4500},
+        {"name": "HQ_10", "type": "HQ", "lon": 77.3900, "lat": 18.4700},
+        {"name": "Cargo_1", "type": "Cargo", "lon": 77.4100, "lat": 18.4600, "description": "Supply drop"},
+    ]
+
+    def _req(self, message):
+        return ChatRequest(message=message, locations=self.LOCS)
+
+    def test_route_to_saved_location_name_variants(self):
+        for q in ["tìm đường đến HQ_1", "route to hq 1", "đường tới HQ1"]:
+            res = execute_offline_fallback(self._req(q))
+            self.assertEqual(res.action.action_type, "PLAN_ROUTE", q)
+            self.assertEqual(res.action.payload["end"], {"lon": 77.43, "lat": 18.45}, q)
+
+    def test_similar_names_do_not_collide(self):
+        res = execute_offline_fallback(self._req("route to HQ_10"))
+        self.assertEqual(res.action.payload["end"], {"lon": 77.39, "lat": 18.47})
+
+    def test_unknown_saved_name_is_reported_not_guessed(self):
+        res = execute_offline_fallback(self._req("tìm đường đến HQ_9"))
+        self.assertIsNone(res.action)
+        self.assertIn("HQ_9", res.reply)
+        self.assertIn("HQ_1", res.reply)
+
+    def test_prompt_context_lists_locations(self):
+        ctx = sys.modules["odyssey_copilot.backend.router"].saved_locations_context(self._req("x").locations)
+        self.assertIn("HQ_1", ctx)
+        self.assertIn("lon=77.43000", ctx)
+        self.assertEqual(sys.modules["odyssey_copilot.backend.router"].saved_locations_context(None), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,8 @@ export interface CopilotAction {
 export interface OdysseyCopilotProps {
   onAction?: (action: CopilotAction) => void
   currentLocation?: { lon: number; lat: number }
+  /** Points the user saved on the map (HQ_1, Cargo_2...); sent so Odyssey can resolve names. */
+  locations?: { name: string; type?: string; lon: number; lat: number; description?: string }[]
   apiUrl?: string
   apiBaseUrl?: string
 }
@@ -37,6 +39,7 @@ interface Message {
 export function OdysseyCopilot({
   onAction,
   currentLocation,
+  locations,
   apiUrl,
   apiBaseUrl,
 }: OdysseyCopilotProps) {
@@ -48,7 +51,7 @@ export function OdysseyCopilot({
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'model',
-      content: 'ODYSSEY CAPCOM online. Standing by for Jezero Crater EVA queries, terrain inspection, and route navigation.',
+      content: 'ODYSSEY online. Standing by for Jezero Crater queries, terrain inspection, and route navigation.',
       timestamp: '00:00:00'
     }
   ])
@@ -96,18 +99,19 @@ export function OdysseyCopilot({
           history: historyPayload,
           // The API accepts numbers only ({lon, lat}); callers may pass richer objects such as
           // LANDING_SITE (which has a `name`), which would make every request fail with 422.
-          current_location: currentLocation ? { lon: currentLocation.lon, lat: currentLocation.lat } : undefined
+          current_location: currentLocation ? { lon: currentLocation.lon, lat: currentLocation.lat } : undefined,
+          locations: locations?.map(({ name, type, lon, lat, description }) => ({ name, type, lon, lat, description }))
         })
       })
 
       if (!res.ok) {
-        throw new Error(`Capcom telemetry link returned status ${res.status}`)
+        throw new Error(`Odyssey link returned status ${res.status}`)
       }
 
       const data = await res.json()
       const modelMsg: Message = {
         role: 'model',
-        content: data.reply || 'Roger, Capcom standing by.',
+        content: data.reply || 'Roger, Odyssey standing by.',
         action: data.action || undefined,
         tools: data.tools_called || undefined,
         timestamp: new Date().toTimeString().split(' ')[0]
@@ -136,7 +140,7 @@ export function OdysseyCopilot({
         <button
           onClick={() => setIsOpen(true)}
           aria-expanded={false}
-          aria-label="Open EVA Copilot"
+          aria-label="Open Odyssey"
           className="flex items-center justify-center gap-2.5 px-4 py-2.5 md:w-[var(--mo-right-w,auto)] rounded-full bg-slate-950/90 text-orange-400 border border-orange-500/40 shadow-xl shadow-orange-950/30 backdrop-blur-md hover:border-orange-400 hover:text-orange-300 transition-colors cursor-pointer"
         >
           <span className="relative flex h-2 w-2">
@@ -144,7 +148,7 @@ export function OdysseyCopilot({
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
           <Radio size={14} className="text-orange-500 animate-pulse" />
-          <span className="tracking-wider uppercase font-semibold text-[11px]">EVA COPILOT // CAPCOM</span>
+          <span className="tracking-wider uppercase font-semibold text-[11px]">ODYSSEY</span>
           <ChevronUp size={14} className="md:rotate-180" />
         </button>
       ) : (
@@ -158,7 +162,7 @@ export function OdysseyCopilot({
             <div className="flex items-center gap-2">
               <Terminal size={14} className="text-orange-500" />
               <span className="text-orange-400 font-bold uppercase tracking-wider text-[11px]">
-                ODYSSEY COPILOT // EVA OPS
+                ODYSSEY
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-500/30">
                 LIVE
@@ -166,7 +170,7 @@ export function OdysseyCopilot({
             </div>
             <div className="flex items-center gap-1">
               <button 
-                onClick={() => setMessages([{ role: 'model', content: 'ODYSSEY CAPCOM reset. Standing by for EVA operations.', timestamp: '00:00:00' }])}
+                onClick={() => setMessages([{ role: 'model', content: 'ODYSSEY reset. Standing by.', timestamp: '00:00:00' }])}
                 title="Reset History"
                 className="p-1 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
               >
@@ -175,7 +179,7 @@ export function OdysseyCopilot({
               <button 
                 onClick={() => setIsOpen(false)}
                 title="Collapse Dock"
-                aria-label="Collapse EVA Copilot"
+                aria-label="Collapse Odyssey"
                 className="p-1 text-slate-400 hover:text-orange-400 transition-colors cursor-pointer"
               >
                 <ChevronDown size={15} className="md:rotate-180" />
@@ -188,7 +192,7 @@ export function OdysseyCopilot({
             <div className="px-3.5 py-1 bg-slate-900/40 border-b border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
               <div className="flex items-center gap-1.5">
                 <Crosshair size={10} className="text-orange-400" />
-                <span>CURRENT EVA WAYPOINT:</span>
+                <span>CURRENT WAYPOINT:</span>
               </div>
               <span className="text-slate-300 font-semibold">
                 {currentLocation.lon.toFixed(4)}°E, {currentLocation.lat.toFixed(4)}°N
@@ -217,7 +221,7 @@ export function OdysseyCopilot({
               return (
                 <div key={idx} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mb-1 px-1">
-                    <span>{isUser ? 'ASTRONAUT' : 'CAPCOM'}</span>
+                    <span>{isUser ? 'YOU' : 'ODYSSEY'}</span>
                     <span>·</span>
                     <span>{m.timestamp}</span>
                     {m.tools && m.tools.length > 0 && (
@@ -264,7 +268,7 @@ export function OdysseyCopilot({
             {loading && (
               <div className="flex items-center gap-2 text-slate-400 text-xs py-1 px-2">
                 <Radio size={12} className="text-orange-500 animate-spin" />
-                <span className="animate-pulse">CAPCOM COMPUTING TRAVERSE METRICS...</span>
+                <span className="animate-pulse">ODYSSEY IS THINKING...</span>
               </div>
             )}
 
@@ -287,7 +291,7 @@ export function OdysseyCopilot({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Query Capcom or request traverse..."
+              placeholder="Ask Odyssey or request a route, e.g. route to HQ_1..."
               disabled={loading}
               className="flex-1 bg-slate-950 text-slate-200 border border-slate-700 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-orange-500 placeholder-slate-500"
             />

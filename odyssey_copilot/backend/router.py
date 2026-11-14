@@ -12,7 +12,7 @@ try:
 except ImportError:
     httpx = None
 
-from .schemas import ChatRequest, ChatResponse, CopilotAction
+from .schemas import ChatRequest, ChatResponse, CopilotAction, SavedLocation
 from .prompt import SYSTEM_PROMPT
 from .tools import (
     get_sample_info,
@@ -160,6 +160,39 @@ OPENROUTER_TOOLS = [
 ]
 
 
+MAX_SAVED_LOCATIONS = 50
+LOCATION_NAME_RE = re.compile(
+    r"(?<![a-z0-9])(?:hq|geological|cargo|supplies|greenhouse|attention)[\s_\-]?\d+(?![a-z0-9])", re.IGNORECASE
+)
+
+
+def saved_locations_context(locations: Optional[List[SavedLocation]]) -> str:
+    """Prompt block listing the user's saved map locations (empty string when there are none)."""
+    if not locations:
+        return ""
+    lines = []
+    for loc in locations[:MAX_SAVED_LOCATIONS]:
+        extra = f" [{loc.type}]" if loc.type else ""
+        note = f" - {loc.description}" if loc.description else ""
+        lines.append(f"- {loc.name}{extra}: lon={loc.lon:.5f}, lat={loc.lat:.5f}{note}")
+    return "[Saved map locations]\n" + "\n".join(lines) + "\n"
+
+
+def find_saved_location(text: str, locations: Optional[List[SavedLocation]]) -> Optional[SavedLocation]:
+    """Return the saved location named in text ('HQ_1', 'hq 1', 'hq1' all match), longest name first."""
+    if not locations:
+        return None
+    msg = text.lower()
+    for loc in sorted(locations, key=lambda l: len(l.name), reverse=True):
+        parts = [re.escape(p) for p in re.split(r"[\s_\-]+", loc.name.lower().strip()) if p]
+        if not parts:
+            continue
+        pattern = r"(?<![a-z0-9])" + r"[\s_\-]?".join(parts) + r"(?![a-z0-9])"
+        if re.search(pattern, msg):
+            return loc
+    return None
+
+
 def dispatch_copilot_tool(func_name: str, func_args: Dict[str, Any], cur_lon: float, cur_lat: float) -> tuple[Dict[str, Any], Optional[CopilotAction]]:
     """Dispatch a tool call by name and arguments, returning (tool_result, copilot_action)."""
     if func_name == "inspect_terrain":
@@ -268,7 +301,10 @@ async def chat_openrouter(request: ChatRequest, api_key: str, model: str, cur_lo
             role = "assistant" if h.get("role") == "model" else "user"
             messages.append({"role": role, "content": h.get("content", "")})
 
-    user_prompt = f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n{request.message}"
+    user_prompt = (
+        f"[Astronaut EVA Coordinates: lon={cur_lon}, lat={cur_lat}]\n"
+        f"{saved_locations_context(request.locations)}{request.message}"
+    )
     messages.append({"role": "user", "content": user_prompt})
 
     headers = {
@@ -327,7 +363,7 @@ async def chat_openrouter(request: ChatRequest, api_key: str, model: str, cur_lo
 
     if tools_called:
         if not reply_text or "tool_calls" in reply_text or reply_text.startswith("{"):
-            reply_text = f"Capcom telemetry confirmed. Data for {', '.join(tools_called)} received and transmitted to HUD."
+            reply_text = f"Odyssey telemetry confirmed. Data for {', '.join(tools_called)} received and transmitted to HUD."
         return ChatResponse(reply=reply_text + notices, action=action, tools_called=tools_called)
 
     # No tool calls: use the deterministic fallback only when it recognises an actionable intent
@@ -335,7 +371,7 @@ async def chat_openrouter(request: ChatRequest, api_key: str, model: str, cur_lo
     if fallback_res.action is not None:
         return fallback_res
 
-    return ChatResponse(reply=reply_text or "Roger, Capcom standing by.", action=None, tools_called=[])
+    return ChatResponse(reply=reply_text or "Roger, Odyssey standing by.", action=None, tools_called=[])
 
 
 VITALS_REGEX = re.compile(
@@ -358,7 +394,7 @@ def check_vitals_refusal(message: str = "", text: Optional[str] = None) -> Optio
         return None
     if VITALS_REGEX.search(query):
         return ChatResponse(
-            reply="EVA suit telemetry offline / not equipped. Capcom does not monitor internal biometric telemetry. "
+            reply="EVA suit telemetry offline / not equipped. Odyssey does not monitor internal biometric telemetry. "
                   "Verify suit pressure and O2 reserves on your analog suit console.",
             action=None,
             tools_called=[]
@@ -396,6 +432,17 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
                 tools_called=[]
             )
 
+    saved_loc = find_saved_location(request.message, request.locations)
+    if not saved_loc:
+        unknown = LOCATION_NAME_RE.search(request.message)
+        if unknown:
+            names = ", ".join(l.name for l in (request.locations or [])[:MAX_SAVED_LOCATIONS]) or "none saved yet"
+            return ChatResponse(
+                reply=f"Odyssey: I can't find a saved location matching '{unknown.group(0)}'. Saved locations: {names}.",
+                action=None,
+                tools_called=[]
+            )
+
     # Detect route-planning intent FIRST (before sample name scan)
     ROUTE_KEYWORDS = [
         "route", "path", "traverse", "navigate", "walk", "way to",
@@ -404,6 +451,10 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         "từ vị trí", "từ", "đến"
     ]
     is_route_intent = any(k in msg for k in ROUTE_KEYWORDS)
+
+    # Non-route questions about a saved point (terrain, geology...) apply to that point
+    if saved_loc and not is_route_intent:
+        cur_lon, cur_lat = saved_loc.lon, saved_loc.lat
 
     # 2. Space Weather & Radiation inquiry check (Vietnamese & English)
     SPACE_WEATHER_KEYWORDS = [
@@ -423,7 +474,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         cme_id = latest_cme.get("id", "N/A") if latest_cme else "N/A"
         if is_vi:
             reply = (
-                f"Capcom cảnh báo bức xạ và thời tiết không gian: "
+                f"Odyssey cảnh báo bức xạ và thời tiết không gian: "
                 f"Từ trường vỏ bề mặt Jezero đạt {b_surf:.2f} nT (~500 lần yếu hơn Trái Đất, chắn bức xạ không đáng kể). "
                 f"Mức độ rủi ro bức xạ: {sw_data.get('radiation_risk_level', 'ELEVATED')}. "
                 f"Tổng số sự kiện DONKI ghi nhận: {sw_data.get('space_weather', {}).get('total_recorded_events', 890)} (CME: {sw_data.get('space_weather', {}).get('cme_count', 583)}). "
@@ -431,7 +482,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             )
         else:
             reply = (
-                f"Capcom space weather telemetry: "
+                f"Odyssey space weather telemetry: "
                 f"Jezero surface crustal magnetic field: {b_surf:.2f} nT (~500x weaker than Earth, negligible GCR shielding). "
                 f"Radiation risk level: {sw_data.get('radiation_risk_level', 'ELEVATED')}. "
                 f"Recorded DONKI events: {sw_data.get('space_weather', {}).get('total_recorded_events', 890)} (CMEs: {sw_data.get('space_weather', {}).get('cme_count', 583)}). "
@@ -461,7 +512,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         rh_en = f"Relative humidity: {rh}%. " if rh is not None else ""
         if is_vi:
             reply = (
-                f"Capcom đây. Báo cáo thời tiết trạm MEDA Sol {w_data.get('sol')} tại Jezero: "
+                f"Odyssey đây. Báo cáo thời tiết trạm MEDA Sol {w_data.get('sol')} tại Jezero: "
                 f"Nhiệt độ trung bình {w_data.get('t_air_mean_c')}°C ({w_data.get('t_air_min_c')}°C đến {w_data.get('t_air_max_c')}°C / {w_data.get('t_air_mean_k')}K). "
                 f"Áp suất bề mặt: {w_data.get('p_mean_pa')} Pa (~0.73% bar Trái Đất). {rh_vi}"
                 f"Thành phần: {w_data.get('atmosphere_composition')}. "
@@ -469,7 +520,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             )
         else:
             reply = (
-                f"Capcom here with Perseverance MEDA weather for Sol {w_data.get('sol')}: "
+                f"Odyssey here with Perseverance MEDA weather for Sol {w_data.get('sol')}: "
                 f"Mean air temperature {w_data.get('t_air_mean_c')}°C ({w_data.get('t_air_min_c')}°C to {w_data.get('t_air_max_c')}°C / {w_data.get('t_air_mean_k')}K). "
                 f"Surface pressure: {w_data.get('p_mean_pa')} Pa (0.73% bar). {rh_en}"
                 f"Atmosphere: {w_data.get('atmosphere_composition')}. "
@@ -493,7 +544,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         is_vi = any(k in msg for k in ["địa chất", "địa tầng", "lún", "sa lầy", "đất đá", "quán tính nhiệt"])
         if is_vi:
             reply = (
-                f"Capcom phân tích địa chất tại tọa độ [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
+                f"Odyssey phân tích địa chất tại tọa độ [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
                 f"Đơn vị địa chất: {geo_data.get('unit_name')} (Nhóm: {geo_data.get('group')}, Chỉ số rủi ro: {geo_data.get('risk_score')}/100). "
                 f"Khả năng di chuyển (Trafficability): {geo_data.get('trafficability')}. "
                 f"Quán tính nhiệt THEMIS: {geo_data.get('thermal_inertia', {}).get('rating')}. "
@@ -501,7 +552,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             )
         else:
             reply = (
-                f"Capcom geological assessment at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
+                f"Odyssey geological assessment at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
                 f"Unit: {geo_data.get('unit_name')} (Group: {geo_data.get('group')}, Risk Score: {geo_data.get('risk_score')}/100). "
                 f"Trafficability: {geo_data.get('trafficability')}. "
                 f"THEMIS Thermal Inertia: {geo_data.get('thermal_inertia', {}).get('rating')} ({geo_data.get('thermal_inertia', {}).get('surface_character')}). "
@@ -532,7 +583,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             description=f"Focus on sample #{found_sample['sample_no']}: {found_sample['name']} at {found_sample['feature']}"
         )
         reply = (
-            f"Capcom here. Sample #{found_sample['sample_no']} ({found_sample['name']}) "
+            f"Odyssey here. Sample #{found_sample['sample_no']} ({found_sample['name']}) "
             f"was sealed on Sol {found_sample['sol_sealed']} at feature '{found_sample['feature']}'. "
             f"Rock class: {found_sample['rock_class']} ({found_sample['type']}). "
             f"Coordinates: [{found_sample['lon']:.4f}°E, {found_sample['lat']:.4f}°N] at elevation {found_sample['elev_m']:.1f}m. "
@@ -547,19 +598,22 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         dest_lon, dest_lat = 77.4060, 18.4588  # Default: Delta Front
         dest_name = "Delta Front"
 
-        # Resolve destination: check samples by name/feature first
-        for s in SAMPLES_DB:
-            if s["name"].lower() in msg or s["feature"].lower() in msg:
-                dest_lon, dest_lat = s["lon"], s["lat"]
-                dest_name = f"{s['name']} (Sample #{s['sample_no']})"
-                break
+        # Resolve destination: saved map locations first, then samples by name/feature, then landmarks
+        if saved_loc:
+            dest_lon, dest_lat = saved_loc.lon, saved_loc.lat
+            dest_name = saved_loc.name
         else:
-            # Then check landmarks
-            for lm in LANDMARKS_DB:
-                if lm["name"].lower() in msg:
-                    dest_lon, dest_lat = lm["lon"], lm["lat"]
-                    dest_name = lm["name"]
+            for s in SAMPLES_DB:
+                if s["name"].lower() in msg or s["feature"].lower() in msg:
+                    dest_lon, dest_lat = s["lon"], s["lat"]
+                    dest_name = f"{s['name']} (Sample #{s['sample_no']})"
                     break
+            else:
+                for lm in LANDMARKS_DB:
+                    if lm["name"].lower() in msg:
+                        dest_lon, dest_lat = lm["lon"], lm["lat"]
+                        dest_name = lm["name"]
+                        break
 
         route_data = plan_route(cur_lon, cur_lat, dest_lon, dest_lat)
         action = CopilotAction(
@@ -572,7 +626,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             description=f"Planned traverse from current waypoint to {dest_name} [{dest_lon:.4f}, {dest_lat:.4f}]"
         )
         reply = (
-            f"Capcom copy. Traverse route calculated to {dest_name} [{dest_lon:.4f}°E, {dest_lat:.4f}°N]. "
+            f"Odyssey copy. Traverse route calculated to {dest_name} [{dest_lon:.4f}°E, {dest_lat:.4f}°N]. "
             f"Straight-line distance: {route_data.get('straight_line_m', 0.0):.0f}m. "
             f"Recommended profile: '{route_data.get('recommended', 'balanced')}'. "
             f"Safety check: All waypoints remain below the 30.0° NO-GO slope threshold. Route overlay transmitted to map."
@@ -590,7 +644,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
             description=f"Inspecting terrain at [{cur_lon:.4f}, {cur_lat:.4f}]"
         )
         reply = (
-            f"Capcom terrain telemetry check at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
+            f"Odyssey terrain telemetry check at [{cur_lon:.4f}°E, {cur_lat:.4f}°N]: "
             f"Elevation: {t_data.get('elevation_m')}m, Slope: {t_data.get('slope_deg')}°, "
             f"Roughness: {t_data.get('roughness_m')}m, Hazard Index: {t_data.get('hazard')}/100 "
             f"(Safe operational envelope: <30.0° slope limit). Telemetry pinned to HUD."
@@ -600,7 +654,7 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
     # 8. General mission overview
     return ChatResponse(
-        reply="Odyssey Capcom standing by. Ready to assist with terrain inspection, route planning, MEDA weather telemetry, space radiation, or sample science within Jezero Crater. State your destination or waypoint.",
+        reply="Odyssey standing by. Ready to assist with terrain inspection, route planning, MEDA weather telemetry, space radiation, or sample science within Jezero Crater. State your destination or waypoint.",
         action=None,
         tools_called=[]
     )
