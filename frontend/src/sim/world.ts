@@ -22,7 +22,7 @@ export const MARKER_STYLE: Record<MarkerType, { label: string; color: string; Ic
 }
 
 /* ------------------------------------------------------------------ user locations */
-export interface MapLocation { id: string; name: string; type: LocationType; lon: number; lat: number }
+export interface MapLocation { id: string; name: string; type: LocationType; lon: number; lat: number; description?: string }
 
 export function nextLocationName(type: LocationType, list: MapLocation[]): string {
   const used = list.filter(l => l.type === type).map(l => Number(l.name.slice(type.length + 1)) || 0)
@@ -48,7 +48,17 @@ export interface WorldAgent {
   target: string | null; goal: { lon: number; lat: number } | null
   /** remaining mission path [lon, lat][] while travelling / intercepting */
   path?: [number, number][] | null
+  /** rover battery / astronaut suit oxygen, percent */
+  energy?: number
 }
+
+/** What each object type carries: battery for vehicles, oxygen for people. */
+export const RESOURCE: Record<ObjectKind, { label: string; short: string }> = {
+  rover: { label: 'Battery', short: '⚡' }, astronaut: { label: 'Oxygen', short: 'O₂' },
+}
+/** Green above 50 %, yellow from 30 to 50 %, red below 30 % (also the low-oxygen alert level). */
+export const LOW_ENERGY_PCT = 30
+export const energyColor = (p: number) => (p > 50 ? '#34d399' : p >= LOW_ENERGY_PCT ? '#facc15' : '#f87171')
 export interface WorldState { mission: string; selected: string | null; running: boolean; sim_time: number; agents: WorldAgent[] }
 
 export const MODE_LABEL: Record<string, string> = {

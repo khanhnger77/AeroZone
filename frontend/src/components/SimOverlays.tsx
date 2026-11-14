@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEven
 import { Crosshair, Navigation, X } from 'lucide-react'
 import { fmtDist, fmtLat, fmtLon } from '../map/geo'
 import {
-  LOCATION_TYPES, MARKER_STYLE, MODE_LABEL, OBJECT_KINDS, bearingDeg, compass, distM,
+  LOCATION_TYPES, MARKER_STYLE, MODE_LABEL, OBJECT_KINDS, RESOURCE, bearingDeg, compass, distM, energyColor,
   type MapLocation, type MarkerType, type WorldAgent,
 } from '../sim/world'
 
@@ -50,10 +50,12 @@ export function FocusPopup({ children, onClose, title, type }: { children: React
   )
 }
 
-export function AgentPopup({ agent, agents, locations, isSelected, arming, speeds, onSpeed, onSelect, onTraverse, onClose }: {
+export function AgentPopup({ agent, agents, locations, isSelected, arming, speeds, onSpeed, onEnergy, onSelect, onTraverse, onClose }: {
   agent: WorldAgent; agents: WorldAgent[]; locations: MapLocation[]; isSelected: boolean; arming: boolean
   /** demo speeds (m/s) for the speed drop-down, shown while the object is moving on its own */
   speeds: number[]; onSpeed: (v: number) => void
+  /** set the oxygen level (astronauts; for testing the low-oxygen alert) */
+  onEnergy?: (v: number) => void
   onSelect: () => void; onTraverse: () => void; onClose: () => void
 }) {
   const moving = ['wander', 'goto', 'intercept', 'route'].includes(agent.mode)
@@ -77,6 +79,9 @@ export function AgentPopup({ agent, agents, locations, isSelected, arming, speed
             {options.map(v => <option key={v} value={v} className="bg-panel-2">{v < 0.1 ? `${(v * 100).toFixed(1)} cm/s` : `${+v.toFixed(2)} m/s`}</option>)}
           </select></dd>
       </> : <Row k="Speed" v={`${agent.speed_m_s.toFixed(2)} m/s`} />}
+      {agent.energy != null && <><dt className="text-muted">{RESOURCE[agent.kind].label}</dt>
+        <dd className="flex items-center gap-1.5 font-mono"><span style={{ color: energyColor(agent.energy) }}>{agent.energy.toFixed(1)}%</span>
+          {agent.kind === 'astronaut' && onEnergy && <EnergyEditor key={agent.id} onSet={onEnergy} />}</dd></>}
       <Row k="Heading" v={`${b.toFixed(0)}° ${compass(b)}`} />
       <Row k="Status" v={`${MODE_LABEL[agent.mode] ?? agent.mode}${target ? ` · ${target}` : ''}`} />
       <Row k="Position" v={`${fmtLat(agent.lat)} ${fmtLon(agent.lon)}`} />
@@ -101,12 +106,82 @@ export function LocationPopup({ loc, selected, canTravel, onTravel, onClose }: {
   return <FocusPopup title={loc.name} type={loc.type} onClose={onClose}>
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
       <Row k="Location" v={`${fmtLat(loc.lat)} ${fmtLon(loc.lon)}`} />
+      {loc.description && <><dt className="text-muted">Notes</dt><dd className="whitespace-pre-wrap break-words">{loc.description}</dd></>}
       {selected && <Row k={`From ${selected.name}`} v={fmtDist(distM(selected, loc))} />}
     </dl>
     {canTravel && <button type="button" disabled={!selected} onClick={onTravel} className="btn-primary mt-2.5 w-full !py-1.5 text-[11px]">
       <Navigation size={12} aria-hidden="true" />Travel here{selected ? ` · ${selected.name}` : ''}
     </button>}
   </FocusPopup>
+}
+
+/** Small "set oxygen" field in the astronaut popup, to try the low-oxygen alert. */
+function EnergyEditor({ onSet }: { onSet: (v: number) => void }) {
+  const [v, setV] = useState('25')
+  const ok = v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100
+  return <form className="ml-auto flex items-center gap-1" onSubmit={e => { e.preventDefault(); if (ok) onSet(Number(v)) }} title="Set the oxygen level (testing)">
+    <input aria-label="Oxygen level to set (percent)" inputMode="decimal" value={v} onChange={e => setV(e.target.value)}
+      className="w-11 rounded border border-line bg-panel-2 px-1 py-0.5 text-right text-[10.5px] text-ink" />
+    <span className="text-[10px] text-muted">%</span>
+    <button type="submit" disabled={!ok} className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink disabled:opacity-40">Set</button>
+  </form>
+}
+
+/* ------------------------------------------------------------------ low-oxygen alerts */
+/**
+ * Top-of-screen alert for each astronaut under 30 % oxygen, ending in an investigate (attention)
+ * button. It opens a dialog to send a rover: the closest one is preselected, at the highest demo
+ * speed, with a straight-line ETA. The alert goes away only once a rover is sent.
+ */
+export function OxygenAlerts({ people, rovers, maxSpeed, warp, top, onSend }: {
+  people: WorldAgent[]; rovers: WorldAgent[]; maxSpeed: number; warp: number; top: string
+  onSend: (roverId: string, personId: string) => void
+}) {
+  const [open, setOpen] = useState<string | null>(null)
+  const [rover, setRover] = useState('')
+  const person = people.find(p => p.id === open)
+  const byDistance = person ? [...rovers].sort((a, b) => distM(a, person) - distM(b, person)) : []
+  const chosen = byDistance.find(r => r.id === rover) ?? byDistance[0]
+  const Alert = MARKER_STYLE.Attention.Icon
+  const fmt = (t: number) => (t >= 3600 ? `${Math.floor(t / 3600)} h ${Math.round((t % 3600) / 60)} min` : t >= 60 ? `${Math.round(t / 60)} min` : `${Math.round(t)} s`)
+  const eta = (r: WorldAgent, p: WorldAgent) => {
+    const s = distM(r, p) / Math.max(maxSpeed, 0.01)
+    return warp > 1 ? `${fmt(s)} sim time (${fmt(s / warp)} at ${warp}×)` : fmt(s)
+  }
+  if (!people.length) return null
+  return (
+    <div className={`pointer-events-none fixed left-1/2 z-[1500] flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col items-stretch gap-1.5 ${top}`} role="alert">
+      {people.map(p => (
+        <div key={p.id} className="pointer-events-auto flex items-center gap-2 rounded-xl border border-red-400/60 bg-red-950/85 px-3 py-2 text-xs text-red-100 shadow-lg backdrop-blur">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-400" />
+          <span className="min-w-0 flex-1"><b>{p.name}</b>: oxygen low, <b className="font-mono">{(p.energy ?? 0).toFixed(1)}%</b></span>
+          <button type="button" onClick={() => { setOpen(p.id); setRover('') }} title="Investigate: send a rover" aria-label={`Investigate ${p.name}`}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full" style={{ background: MARKER_STYLE.Attention.color }}>
+            <Alert size={15} color="#05070a" />
+          </button>
+        </div>
+      ))}
+      {person && (
+        <div className="glass fade-in pointer-events-auto rounded-xl p-3 text-xs shadow-2xl" role="dialog" aria-label={`Send a rover to ${person.name}`}>
+          <div className="mb-2 text-sm font-semibold">Send a rover to {person.name}?</div>
+          {byDistance.length === 0 ? <p className="text-muted">No rover in this simulation.</p> : <>
+            <label className="block text-muted">Rover
+              <select value={chosen?.id ?? ''} onChange={e => setRover(e.target.value)} style={{ colorScheme: 'dark' }}
+                className="mt-1 block w-full rounded border border-line bg-panel-2 p-1.5 text-ink">
+                {byDistance.map((r, i) => <option key={r.id} value={r.id} className="bg-panel-2">{r.name} · {fmtDist(distM(r, person))}{i === 0 ? ' (closest)' : ''}</option>)}
+              </select>
+            </label>
+            {chosen && <p className="mt-2 text-muted">At {maxSpeed} m/s (highest speed). ETA ≈ <b className="text-ink">{eta(chosen, person)}</b>
+              <span className="block text-[10.5px] text-faint">Straight line: slopes, rough ground and detours make it longer. The rover intercepts the person.</span></p>}
+          </>}
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => setOpen(null)} className="btn-ghost !py-1.5 text-xs">Cancel</button>
+            <button type="button" disabled={!chosen} onClick={() => { if (chosen) { onSend(chosen.id, person.id); setOpen(null) } }} className="btn-primary !py-1.5 text-xs">Send {chosen?.name ?? 'rover'}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ corner selector */

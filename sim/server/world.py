@@ -41,6 +41,9 @@ INTERCEPT_REPLAN_S = 6.0     # sim seconds between intercept re-plans
 INTERCEPT_DRIFT_M = 10.0     # or sooner when the aim point moved this far
 ROCK_LOOKAHEAD_M = 9.0
 EDGE_MARGIN_M = 40.0
+# Consumables (percent per sim hour). Rover battery: hotel load plus a drive term per m/s;
+# astronaut suit oxygen: ~8 h at rest, faster when walking. Floored at 0 %. Demo values, not mission data.
+DRAIN_PCT_H = {"rover": (3.0, 6.0), "astronaut": (11.0, 4.0)}   # (idle, extra per m/s)
 
 
 def _wrap(a: float) -> float:
@@ -97,6 +100,7 @@ class Agent:
     home: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rng_seed: int = 0
     initial_mode: str = "wander"
+    energy: float = 100.0              # rover battery / astronaut oxygen, percent
     route_pref: str | None = None      # planner profile for a goto ("cautious" for locations)
 
     def set_path(self, xy) -> None:
@@ -179,6 +183,7 @@ class World:
         for a in self.agents.values():
             a.x, a.y, a.yaw = a.home
             a.z, a.v, a.w = self.h(a.x, a.y), 0.0, 0.0
+            a.energy = 100.0
             self.set_mode(a, a.initial_mode)
         self._near.clear()
         self.running = False
@@ -310,6 +315,9 @@ class World:
             return
         self.t += dt
         if self.running:
+            for a in self.agents.values():             # consumables drain while time runs
+                idle, per_ms = DRAIN_PCT_H[a.kind]
+                a.energy = max(0.0, a.energy - (idle + per_ms * abs(a.v)) * dt / 3600.0)
             for a in self.agents.values():
                 if a.id == self.selected:
                     if self.intercept_due(a):
@@ -381,7 +389,8 @@ class World:
              "lon": round(float(lon), 8), "lat": round(float(lat), 8),
              "x": round(a.x, 2), "y": round(a.y, 2), "z": round(a.z, 2),
              "yaw_deg": round(math.degrees(a.yaw), 1), "speed_m_s": round(abs(a.v), 3),
-             "cruise_m_s": round(a.cruise, 3), "target": a.target_id, "goal": None}
+             "cruise_m_s": round(a.cruise, 3), "target": a.target_id, "goal": None,
+             "energy": round(a.energy, 2)}
         if a.goal is not None and a.mode in ("goto", "intercept", "wander"):
             glon, glat = self.frame.to_lonlat(*a.goal)
             d["goal"] = {"lon": round(float(glon), 8), "lat": round(float(glat), 8)}

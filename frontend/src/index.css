@@ -156,3 +156,10 @@ button:disabled { cursor: not-allowed; }
 }
 @keyframes mo-mk-pulse { 50% { transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) { .mo-mk.hl .mo-mk-body { animation: none; } }
+
+.mo-mk-res {
+  position: absolute; left: 50%; top: calc(100% + 2px); transform: translateX(-50%); display: flex; align-items: center; gap: 3px;
+  white-space: nowrap; padding: 1px 4px; border-radius: 9999px; background: rgba(5,7,10,.82);
+  font: 600 9.5px/1.2 ui-monospace, monospace; pointer-events: none;
+}
+.mo-mk-res b { font: 700 9px/1 ui-sans-serif, system-ui, sans-serif; }

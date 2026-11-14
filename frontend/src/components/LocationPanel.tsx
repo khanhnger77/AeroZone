@@ -12,7 +12,8 @@ interface Props {
   placing: LocationType | null
   onPlace: (t: LocationType | null) => void
   onFocus: (id: string) => void
-  onMove: (id: string, p: { lon: number; lat: number }) => void
+  /** move and / or describe a location */
+  onMove: (id: string, p: { lon?: number; lat?: number; description?: string }) => void
   onDelete: (id: string) => void
   /** selected sim object, for distances */
   selected: WorldAgent | null
@@ -73,21 +74,26 @@ export function TypeToggle({ type, on, onToggle }: { type: MarkerType; on: boole
 
 function LocationRow({ loc, active, selected, onFocus, onMove, onDelete }: {
   loc: MapLocation; active: boolean; selected: WorldAgent | null
-  onFocus: () => void; onMove: (p: { lon: number; lat: number }) => void; onDelete: () => void
+  onFocus: () => void; onMove: (p: { lon?: number; lat?: number; description?: string }) => void; onDelete: () => void
 }) {
-  const [edit, setEdit] = useState<{ lon: string; lat: string } | null>(null)
+  const [edit, setEdit] = useState<{ lon: string; lat: string; description: string } | null>(null)
   const valid = edit && Number.isFinite(Number(edit.lon)) && Number.isFinite(Number(edit.lat)) && edit.lon !== '' && edit.lat !== ''
   return <li className={`rounded-lg border px-2 py-1.5 ${active ? 'border-mars/70 bg-mars/10' : 'border-line'}`}>
     <div className="flex items-center gap-2">
       <button type="button" onClick={onFocus} className="min-w-0 flex-1 text-left">
         <div className="truncate text-xs font-medium">{loc.name}</div>
+        {loc.description && <div className="truncate text-[10.5px] text-muted">{loc.description}</div>}
         <div className="truncate font-mono text-[10px] text-muted">{loc.lat.toFixed(5)}°N {loc.lon.toFixed(5)}°E{selected ? ` · ${fmtDist(distM(selected, loc))} from ${selected.name}` : ''}</div>
       </button>
-      <button type="button" onClick={() => setEdit(edit ? null : { lon: loc.lon.toFixed(6), lat: loc.lat.toFixed(6) })}
+      <button type="button" onClick={() => setEdit(edit ? null : { lon: loc.lon.toFixed(6), lat: loc.lat.toFixed(6), description: loc.description ?? '' })}
         className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">{edit ? 'Cancel' : 'Edit'}</button>
       <button type="button" onClick={onDelete} aria-label={`Delete ${loc.name}`} title="Delete" className="text-muted hover:text-red-300"><Trash2 size={13} /></button>
     </div>
-    {edit && <form className="mt-1.5 flex items-end gap-1.5" onSubmit={e => { e.preventDefault(); if (valid) { onMove({ lon: Number(edit.lon), lat: Number(edit.lat) }); setEdit(null) } }}>
+    {edit && <form className="mt-1.5 flex flex-wrap items-end gap-1.5" onSubmit={e => { e.preventDefault(); if (valid) { onMove({ lon: Number(edit.lon), lat: Number(edit.lat), description: edit.description.trim() }); setEdit(null) } }}>
+      <label className="w-full text-[10px] text-muted">Description
+        <textarea rows={2} maxLength={500} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} placeholder="Notes shown when the icon is clicked"
+          className="mt-0.5 block w-full resize-y rounded border border-line bg-panel-2 px-1.5 py-1 text-[11px] text-ink" />
+      </label>
       {(['lat', 'lon'] as const).map(k => <label key={k} className="flex-1 text-[10px] text-muted">{k === 'lat' ? 'Lat °N' : 'Lon °E'}
         <input inputMode="decimal" value={edit[k]} onChange={e => setEdit({ ...edit, [k]: e.target.value })}
           className="mt-0.5 block w-full rounded border border-line bg-panel-2 px-1.5 py-1 font-mono text-[11px] text-ink" />
