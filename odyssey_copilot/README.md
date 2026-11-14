@@ -9,7 +9,7 @@
 `odyssey_copilot` là trợ lý ảo hỗ trợ phi hành gia (EVA Co-pilot / Capcom Radio Assistant) hoạt động tại **Jezero Crater, Sao Hỏa**. Được thiết kế như một module độc lập (**decoupled & plug-and-play**), copilot có thể được tích hợp vào bất kỳ giao diện web/map nào chỉ trong vòng **15 phút**.
 
 ### Điểm nổi bật:
-* 🧠 **2-Pass Agentic Tool Loop**: Sử dụng model **Gemini 3.5 Flash Lite** (nhẹ nhất, nhanh nhất từ Google GenAI) với cơ chế tự động gọi các công cụ địa hình & khoa học.
+* 🧠 **2-Pass Agentic Tool Loop**: Gọi LLM qua **OpenRouter** (mặc định `deepseek/deepseek-chat`, đổi bằng `OPENROUTER_MODEL`) với vòng lặp tự động gọi các công cụ địa hình & khoa học (tối đa 3 lượt).
 * 🛡️ **Zero-Hallucination & Telemetry Guard**: Nghiêm ngặt từ chối bịa đặt các chỉ số sinh tồn của bộ đồ EVA (áp suất, lượng oxy bình dưỡng khí, nhịp tim), hướng dẫn phi hành gia kiểm tra bảng điều khiển analog phần cứng.
 * 🛰️ **Grounding dữ liệu NASA**: Tích hợp toàn diện 25 mẫu đá lõi của xe tự hành Perseverance (bao gồm các điểm nóng sinh học cổ như *Cheyava Falls - Sample #25*) và địa hình HiRISE/MOLA.
 * ⚡ **Offline Capcom Fallback**: Hệ thống vẫn phản hồi chính xác số liệu thực địa và điều khiển bản đồ ngay cả khi mất mạng hoặc chưa cấu hình API key.
@@ -40,15 +40,16 @@ odyssey_copilot/
 ### 1. Cài đặt thư viện phụ thuộc
 Module chỉ yêu cầu các thư viện tiêu chuẩn:
 ```bash
-pip install fastapi uvicorn pydantic google-genai
+pip install fastapi uvicorn pydantic httpx
 ```
 
-### 2. Cấu hình Gemini API Key
+### 2. Cấu hình OpenRouter API Key
 Tạo file `.env` tại thư mục gốc của project (`Challenge/AeroZone/.env`):
 ```env
-GEMINI_API_KEY="AIzaSy..."
+OPENROUTER_API_KEY="sk-or-v1-..."
+OPENROUTER_MODEL="deepseek/deepseek-chat"  # tùy chọn
 ```
-*(Hoặc `export GEMINI_API_KEY="AIzaSy..."` trong terminal)*.
+*(Hoặc `export OPENROUTER_API_KEY="sk-or-v1-..."` trong terminal. Không có key thì copilot dùng offline fallback.)*
 
 ---
 
@@ -62,9 +63,9 @@ cd Challenge/AeroZone
 python3 run_copilot_cli.py
 ```
 **Các câu hỏi mẫu để test:**
-* `Cho tôi thông tin chi tiết về mẫu đá Cheyava Falls số 25` $\rightarrow$ Gemini gọi `get_sample_info`, trả về phân tích sinh học và sinh action `FOCUS_SAMPLE`.
-* `Tìm đường an toàn nhất từ vị trí hạ cánh đến Cheyava Falls` $\rightarrow$ Gemini gọi `plan_route`, tính toán và khuyến nghị tuyến đường né dốc > 30° và sinh action `PLAN_ROUTE`.
-* `Kiểm tra độ dốc tại tọa độ 77.4509, 18.4446` $\rightarrow$ Gemini gọi `inspect_terrain`.
+* `Cho tôi thông tin chi tiết về mẫu đá Cheyava Falls số 25` $\rightarrow$ LLM gọi `get_sample_info`, trả về phân tích sinh học và sinh action `FOCUS_SAMPLE`.
+* `Tìm đường an toàn nhất từ vị trí hạ cánh đến Cheyava Falls` $\rightarrow$ LLM gọi `plan_route`, tính toán và khuyến nghị tuyến đường né dốc > 30° và sinh action `PLAN_ROUTE`.
+* `Kiểm tra độ dốc tại tọa độ 77.4509, 18.4446` $\rightarrow$ LLM gọi `inspect_terrain`.
 * `Lượng oxy trong bình của tôi còn bao nhiêu?` $\rightarrow$ Kích hoạt cơ chế an toàn từ chối ảo giác.
 
 ### Cách 2: Chạy Standalone Server API (cổng 8001)
