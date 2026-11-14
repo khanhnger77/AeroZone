@@ -3,6 +3,7 @@ data/raw/hirise_dtm/*.tif
 data/raw/**/*.part
 data/processed/
 data/analysis/
+data/STUB_DATA
 !data/metadata/
 # [v1.1] re-downloadable environment sources (provenance stays in data/metadata/)
 data/raw/geology/
