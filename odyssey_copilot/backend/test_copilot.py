@@ -149,7 +149,11 @@ class TestOdysseyCopilotRouter(unittest.TestCase):
         queries = [
             "What is my current suit oxygen level and heart rate?",
             "Report my O2 consumption rate and battery life",
-            "What is my suit pressure and biometric vitals?"
+            "What is my suit pressure and biometric vitals?",
+            "What is my O2 level?",
+            "Verify suit O2 reserves",
+            "Check my heart rate",
+            "Report suit pressure",
         ]
         for q in queries:
             req = ChatRequest(message=q)
@@ -165,7 +169,10 @@ class TestOdysseyCopilotRouter(unittest.TestCase):
             "Is there CO2 in the Martian atmosphere?",
             "What is the CO2 concentration on Mars?",
             "This is a vital discovery for planetary science.",
-            "What are the vital landmarks in Jezero?"
+            "What are the vital landmarks in Jezero?",
+            "Is atmospheric CO2 useful for MOXIE oxygen generation?",
+            "Tell me about vital geological landmarks in Jezero",
+            "Can MOXIE produce oxygen from atmospheric CO2?",
         ]
         for q in valid_queries:
             req = ChatRequest(message=q)

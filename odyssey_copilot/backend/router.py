@@ -93,9 +93,9 @@ def build_gemini_tools():
 
 VITALS_REGEX = re.compile(
     r"\b("
-    r"o2|oxygen|"
+    r"(?:my|suit|internal|astronaut|remaining)\s+(?:o2|oxygen)|"
+    r"(?:o2|oxygen)\s+(?:level|reserves?|stats?|status|telemetry|reading|sensor|supply|tank|remaining)|"
     r"vitals|vital\s+(?:signs?|stats?|status|telemetry)|"
-    r"vital(?!\s+(?:discovery|landmark|sample|mission|science|finding|clue|component|target|importance|area|traverse|route|observation|step|priority|role|task|detail|significance))|"
     r"heart[ -]?rate|pulse|blood[ -]?pressure|"
     r"body[ -]?temp(?:erature)?|biometrics?|"
     r"suit\s+pressure|respiration|life\s+support|battery\s+(?:level|life)"
