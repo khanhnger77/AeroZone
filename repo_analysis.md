@@ -1,142 +1,83 @@
-# AeroZone (MARS ODYSSEY): repo analysis and test plan
+# AeroZone (MARS ODYSSEY): whole-system analysis and test plan
 
-Branch `merge/M2_M3` = `origin/M2` (route-planner API) + `origin/dev/huy` (M3 web app, M1 data pipeline).
-Specs: [M2_planner_api.md](M2_planner_api.md), [M3_web_app.md](M3_web_app.md) (M3 file is untracked).
+Branch `merge/M1_M2_M3_M4` = `merge/M2_M3` (M2 API + M3 web app) + `feat/sim_engine` (M4) + `feat/M3` (toggle fix) + `feat/data_platform` (M1).
+Not merged yet: **M5** obstacle avoidance (`feat/m5/khanh`).
+Specs: [M1_data_platform_v1.1.md](M1_data_platform_v1.1.md), [M2_planner_api.md](M2_planner_api.md), [M3_web_app.md](M3_web_app.md). M4's design: [sim/README.md](sim/README.md), [WEB_3D_SIM_ENGINE_GUIDE.md](WEB_3D_SIM_ENGINE_GUIDE.md).
 
-## 1. Entry points
+## 1. What the system is
 
-| What | Command | File |
-|---|---|---|
-| Data pipeline (M1) | `make data` | `scripts/download_data.py → validate_data → process_terrain → generate_hazard → render_layers → build_science_targets` |
-| API (M2) | `make backend` = `uvicorn backend.main:app --port 8000` | [backend/main.py](backend/main.py) |
-| Web app (M3) | `make frontend` = `cd frontend && npx vite --port 5173` | [frontend/src/main.tsx](frontend/src/main.tsx) → [App.tsx](frontend/src/App.tsx) |
-| API tests | `make test` = `pytest -q tests` | [tests/test_api.py](tests/test_api.py) |
-| Frontend tests | `cd frontend && npm test` = `node --test tests/*.test.mjs` | [frontend/tests/contracts.test.mjs](frontend/tests/contracts.test.mjs) |
-| Stub rasters | `python -m backend.tools.make_stub_data <out_dir>` | [backend/tools/make_stub_data.py](backend/tools/make_stub_data.py) |
+An EVA-planning map of Jezero crater (Mars) plus a 3D rover simulation. Five modules, joined only by contracts C1–C10 (each spec copies them verbatim; "the contract is the referee").
 
-## 2. Execution path
-
-**Backend request** (`POST /api/route`):
-`main.route` → `main._terrain` → `terrain.get_terrain` (reads 4 GeoTIFFs from `ROOT`, cached) →
-`routing.plan_routes` → `_check_endpoint` ×2 → for each of 3 `PROFILES`: `_solve` (window + `_cost_surface` + `MCP_Geometric`) → `_route_metrics` (haversine, class fractions via `hazard_classes()` ← `data/metadata/hazard_model.json`, profile ≤240, `_nearby_samples` ← `main.samples()` ← `frontend/public/data/samples.geojson`) → `_recommend`.
-Other endpoints: `/api/health`, `/api/metadata` (reads `data/metadata/*.json`), `/api/point`, `/api/raw-images` (httpx → NASA feed, `lru_cache` 256 sols).
-
-**Frontend**: `App.tsx` loads `data/layers.json`, `samples/traverse/waypoints.geojson` (C3 static) + `/api/health` →
-`MarsMap` (Leaflet, Trek tiles, PNG overlays) · `MissionPanel` → `api.planRoute` → `/api/route` ·
-`SciencePanel` → `/api/raw-images` · `StatusBar` → `/api/point` (debounced) ·
-Run demo → `services/sim.ts` → `/sim/api/mission` + `<iframe /sim/?embed=1>` + `LidarScreen` WebSocket `/sim/ws` (parsed by `services/lidar.ts`).
-
-## 3. Core vs scaffolding
-
-- **Core**: `backend/services/{terrain,routing}.py`, `backend/main.py`, `scripts/*` (pipeline), `frontend/src/{App.tsx,map/*,services/*,components/*}`, `frontend/public/data/*`.
-- **Scaffolding / support**: `backend/tools/make_stub_data.py` (test stub), `tools/video/*` + `media/` (promo video, not part of the app), `docs/`, `Makefile`, `environment.yml`, `backend/api/__init__.py` (empty marker, nothing uses it).
-
-## 4. State vs spec: gaps and risks
-
-| # | Finding | Impact on testing |
-|---|---|---|
-| 1 | **No `sim/` dir** (M4 3D engine, M5 obstacle avoidance are not in this branch) | Everything `/sim/*` is untestable end to end: Run demo, tracking inset, DemoControls live data, LidarScreen. Only the client code is unit-tested (contracts.test.mjs) |
-| 2 | **No `pixi.toml`**: specs say `pixi run …`, repo uses conda + `Makefile` with a hard-coded `~/miniconda3/envs/mars` | On this machine conda is not installed, pixi is. Need an env first (see §6) |
-| 3 | `data/processed/`, `data/analysis/` absent (git-ignored, ~1.8 GB download to regenerate) | Without them the API returns 503 except via stub. `tests/test_api.py` auto-generates stub data, so pytest still works; `test_point_matches_rover_elevation` **skips** on stub |
-| 4 | Layer PNGs + C3 geojson are committed | The frontend map works without running the pipeline; only the API needs rasters |
-| 5 | Merge: frontend was written against dev/huy's backend; conflicts resolved to M2's backend | Field names are identical (both follow C4); M2 rounds to 2 decimals vs huy's 1. **Integration test M3↔M2 is the main merge risk to verify** |
-| 6 | Existing API tests cover only the 5 spec tests | No test for: 422 on slope ≥ 30° / no passable route, 422 detail as string on bad input, `/api/metadata`, `/api/raw-images` ranking + 502, exact C4 field set, class fractions sum ≈ 1 |
-
-## 5. Dependency map
-
-- Backend core: fastapi, pydantic, numpy, rasterio, scikit-image (`MCP_Geometric`), httpx (raw images). Tests: pytest, scipy (stub generator).
-- Pipeline only: gdal, geopandas, shapely, pyproj, pillow, requests, scipy.
-- Frontend: react 19, leaflet + react-leaflet, recharts, lucide-react, tailwind v4, vite 6, typescript (also needed by `npm test`).
-
-## 6. Test plan
-
-### Step 0: Environment (one-time)
-
-Option A, pixi (already installed; matches the spec's C9):
-```bash
-pixi init --import environment.yml     # creates pixi.toml (M1-owned file in the spec)
-pixi install
-pixi shell                             # then python / pytest / uvicorn / node 20 available
 ```
-Option B, conda (what README/Makefile expect): install miniconda, `conda env create -f environment.yml`.
-Frontend: `cd frontend && npm install`.
-
-### Level 1: Static checks (frontend, no backend needed)
-```bash
-cd frontend
-npx tsc -b          # spec "done when": clean
-npm run lint        # spec: no errors
-npm run build       # spec: succeeds -> frontend/dist/
+NASA/USGS sources ──► M1 data pipeline ──► C2 rasters (data/processed, data/analysis; git-ignored)
+                                       └─► C3 static web data (frontend/public/data; tracked)
+C2 ──► M2 planner API :8000 ──C4 /api/*──► M3 web app (Vite :5173 / preview :4173)
+C2 ──► M4 sim server  :8100 ──C5 /sim HTTP, C6 /sim/ws, C7 iframe──► M3
+M4 ──C4 (demo mission only)──► M2          M4 ◄──C8 in-process──► M5 (not merged; built-in stand-in)
 ```
+The browser talks only to the web origin; Vite proxies `/api` → 8000 and `/sim` (+ WebSocket) → 8100.
 
-### Level 2: Unit / contract tests (no real data needed)
-```bash
-pytest -q tests                 # API: 4 pass + 1 skip on stub data (auto-generated in a temp dir)
-cd frontend && npm test         # LDR1 parser + C5 sim client (fetch mocked)
-```
+| Module | Owns | Run | Key files |
+|---|---|---|---|
+| M1 data + env + launcher | `scripts/`, `data/`, `pixi.toml`, `sim/tools/run_demo.py`, docs | `pixi run data` (`data-env` optional) | `scripts/{download_data,validate_data,process_terrain,generate_hazard,render_layers,build_science_targets}.py` |
+| M2 route-planner API | `backend/`, `tests/test_api.py` | `pixi run backend` | `backend/main.py`, `backend/services/{terrain,routing}.py` |
+| M3 web app | `frontend/` | `pixi run frontend` | `src/App.tsx`, `src/services/{api,sim,lidar}.ts`, `src/map/MarsMap.tsx` |
+| M4 3D sim | `sim/` (except `obstacle_avoid/`, `tools/run_demo.py`) | `pixi run sim` | `sim/server/{sim_server,physics,terrain,textures}.py`, `sim/backend/navigator.py`, `sim/web/js/*` |
+| M5 obstacle avoidance | `sim/obstacle_avoid/` | (not in branch) | n/a |
 
-### Level 3: API with real data
-```bash
-make data                       # or the 6 scripts; downloads 1.8 GB once
-pytest -q tests                 # now 5/5 must pass (rover-elevation test no longer skips)
-make backend                    # :8000, open http://127.0.0.1:8000/docs
-```
-Manual contract checks (compare against C4 field by field):
-```bash
-curl -s localhost:8000/api/health                                    # {"status":"ok","grid_shape":[1007,2133],"res_m":5.0}
-curl -s 'localhost:8000/api/point?lon=77.45088572&lat=18.44462715'   # inside, elevation ≈ -2570
-curl -s 'localhost:8000/api/point?lon=10&lat=10'                     # {"inside":false}
-curl -s -XPOST localhost:8000/api/route -H 'content-type: application/json' \
-  -d '{"start":{"lon":77.45088572,"lat":18.44462715},"end":{"lon":77.3052,"lat":18.4975}}' | jq '.recommended, .rationale, [.routes[]|{id,length_m,hazard_max,slope_max_deg}]'
-curl -s -XPOST localhost:8000/api/route -H 'content-type: application/json' \
-  -d '{"start":{"lon":200,"lat":0},"end":{"lon":77.3,"lat":18.5}}'  # 422, detail is a string
-curl -s 'localhost:8000/api/raw-images?sol=<sol_sealed of any sample>&n=3' | jq '.images[].camera.instrument'   # needs internet
-curl -s localhost:8000/api/metadata | jq 'keys'
-```
-Timing: demo route should return in "a few seconds" (M2 done-when).
+**Everything at once:** `pixi run demo` (M1 launcher): builds data if missing, `npm install`/`build`, starts API + sim + `vite preview` on **:4173**, waits for health checks, prints a banner.
 
-### Level 4: M3 ↔ M2 integration (manual, browser)
-Run `make backend` + `make frontend`, open http://127.0.0.1:5173.
+## 2. Request flows (the paths a test must cover)
 
-| Area | Check |
+1. **Plan a route**: M3 `MissionPanel` → `api.planRoute` → `/api/route` → M2 `plan_routes` (3 least-cost profiles on C2 rasters via `MCP_Geometric`) → 3 routes + recommendation → map + profile chart.
+2. **Run the 3D demo**: M3 `sim.loadSimMission` → `POST /sim/api/mission` (selected route + alternatives) → M4 crops a drive corridor from `elevation_5m.tif`, builds the PyBullet heightfield collider, returns mission id → M3 embeds `<iframe /sim/?embed=1&m=id>` → page loads `terrain/*.bin` + `texture/*.jpg`, opens `/sim/ws` → M3 sends `set_speed`/`set_warp`/`start` → 50 Hz loop: navigator → physics → telemetry → map tracking inset + DemoControls.
+3. **Lidar**: M3 `LidarScreen` subscribes to `lidar` on `/sim/ws` → binary LDR1 frames (needs M5).
+4. **Science**: M3 `SciencePanel` → `/api/raw-images?sol=` → M2 proxies the NASA feed (needs internet).
+
+## 3. Test layers and how to run them
+
+Setup once: `pixi install` and `cd frontend && npm install`. The 1.8 GB DTM is downloaded on the first `pixi run data`, then it's skipped by size check.
+
+| Layer | Command | Needs | What it proves |
+|---|---|---|---|
+| L1 static (M3) | `cd frontend && npx tsc -b && npm run lint && npm run build` | node | types, lint, production bundle |
+| L2 unit, M1 | `pixi run python -m pytest -q scripts/tests` | C2 data for most checks | hazard byte-identical to v1.0, C2-ext grids, C10 shapes (5 skip without `data-env`) |
+| L2 unit, M2 | `pixi run python -m pytest -q tests` | nothing (auto stub data) / real data for rover-elevation test | C4 contract, 422/502 paths, metrics |
+| L2 unit, M3 | `cd frontend && npm test` | node | LDR1 parser, C5 client, C4 error surfacing |
+| L2 unit, M4 | `pixi run python -m pytest -q sim/tests` | nothing (synthetic 201×201 grid) | gravity, collider vs render, navigator, server HTTP/WS |
+| L3 system smoke | `pixi run demo --no-browser --no-env-data`, then `pixi run python <scratchpad>/system_smoke.py` (25 checks through :4173) | real data, internet for textures | every contract boundary as the browser sees it |
+| L4 browser (manual) | open http://127.0.0.1:4173 | stack running | UI checklist below |
+
+`pixi run test` (M1's task) also lists `sim/obstacle_avoid/tests`, so it fails until M5 is merged. Use the explicit paths above until then.
+
+**L4 browser checklist**
+- Planner: tabs Explorer / Layers / Safety / Science / Mission; cursor readout; Compute routes (landing → sample 25 preset) shows 3 cards, rationale, profile hover moves the marker; out-of-grid pick shows the 422 message.
+- 3D demo: Mission → Run demo → 3D background, tracking inset, DemoControls; set 2 m/s and 5×; the rover must move along the route and its elevation must stay near the terrain (≈ −2570 m at the start). **Currently fails, see §5.**
+- With M5 merged: tick "Randomly generate obstacles", check the lidar screen and a detour/rejoin.
+
+## 4. Results (2026-11-14, `merge/M1_M2_M3_M4`, real data rebuilt with M1's scripts)
+
+| Layer | Result |
 |---|---|
-| Load | Briefing modal on first visit; map centred [18.462, 77.385] z13; base Viking, CTX+HiRISE on, traverse + samples on; StatusBar shows API connected |
-| Cursor | StatusBar lon/lat + terrain readout updates (`/api/point`), "outside" off the AOI |
-| Explorer | 5 Fly-to places go to the coordinates in the M3 spec table |
-| Layers | Toggle 4 analysis rasters + opacity; legend dock shows last two |
-| Safety | Entering tab turns hazard overlay on; classes/stats match `hazard_model.json` |
-| Science | 25 samples; selecting one loads raw images of that sol (502 → readable error offline) |
-| Mission | Pick start/target on map → Compute routes → 3 cards (Direct blue, Balanced green, Cautious amber), recommendation + rationale, details, nearby samples; profile chart hover moves map marker; Reset clears; demo-scenario preset = landing → sample 25 |
-| Errors | Pick a start outside the grid or on a steep slope → 422 detail shown in UI. Stop backend → API state shows down, planner shows an error (no crash) |
-| Phone | Narrow window < 768 px: phone layout usable |
+| L1 | tsc clean · lint 0 errors / 3 warnings (`react-refresh` in `MarsMap.tsx`) · build OK |
+| L2 Python (M1 + M2 + M4) | **63 passed, 5 skipped** (skips = `data-env` rasters not built) |
+| L2 M3 | 5/5 |
+| L3 system smoke | **24/25**: web, C3, all C4 endpoints (demo route 0.7 s, landing elevation −2569.92 m), C5 config/page/assets/mission (1.6 s)/terrain bins/textures, C6 hello/acks/telemetry 42 Hz. Fail: LDR1 lidar frames (expected; M5 missing) |
 
-### Level 5: 3D demo (blocked in this branch)
-Needs M4/M5 (`sim/`). Until merged:
-- Verify the graceful failure: Run demo → message "Sim server not reachable on :8100…".
-- Optional: build the stubs from M3 spec §4 (static `/sim/` page posting `ready` + fake `telemetry`; a small WebSocket emitting synthetic LDR1 frames on :8100) to test tracking inset, DemoControls and LidarScreen.
+## 5. Defect found: rover falls through the terrain on real routes (M4)
 
-### Tests worth adding (gaps from §4 #6)
-`tests/test_api.py`:
-1. Start on slope ≥ 30° → 422 (find a cell from the slope raster / stub crater rim).
-2. 422 `detail` is a `str` for out-of-range lon (custom validation handler).
-3. Route response has exactly the C4 keys; colours `#60a5fa/#34d399/#fbbf24`; `len(profile) ≤ 240`; `sum(hazard_class_fraction) ≈ 1`; every `samples_within_150m.distance_m ≤ 150`.
-4. `/api/metadata` keys = `{sources, validation_report, terrain_stats, hazard_model}`.
-5. `/api/raw-images` with `httpx.get` monkeypatched: camera ranking MCZ first, `n` respected, 502 on `httpx.HTTPError`.
+- **Symptom:** after `start` on the demo mission, telemetry `elev_m` drops at ~3.7 m/s² (Mars free fall) from −2570 m to −4200 m within 30 s sim time; `distance_done_m` ≈ 0. The smoke check "rover drives" passed only because it compared tiny numbers. The real signal is elevation.
+- **Root cause:** the PyBullet heightfield collider (`sim/server/physics.py` `PhysicsWorld.set_terrain`) stops colliding when the grid has **more than 262,144 posts (2¹⁸ = 512²)**, whatever its shape (pybullet 3.25, conda-forge osx-arm64). Measured by drop test: 512×512, 1024×256 and 2048×128 hold a ball; 513×513, 600×600 and 2200×120 let it fall. The demo corridor is 1834×731 = 1.34 M posts, and C5 allows up to 2200 posts per side.
+- **Why tests miss it:** `sim/tests/test_physics.py` uses 201×201 grids; the server tests use synthetic small terrain.
+- **Fix options for the M4 owner** (not applied; M4 owns `sim/`):
+  1. Split the corridor collider into tiles of ≤ 512×512 posts (overlapping by one post). This keeps the native 5 m collider, which the spec requires so that the collider, mesh and lidar agree.
+  2. Use `GEOM_MESH` triangles instead of a heightfield.
+  3. Cap the corridor at ≤ 262,144 posts by resampling (`GridDesc.resampled` exists). Simplest, but coarser, and it changes what C5 promises.
+  - Add a regression test: build a > 512² grid, drop the rover, assert it settles.
+- Also worth checking on Linux/Windows; the limit may be specific to this build.
 
-`frontend/tests`: `getJSON` surfaces `detail` from a 422 body (what the planner shows to the user).
+## 6. Merge notes
 
-## 7. Results (2026-11-14, branch merge/M2_M3, stub data)
-
-Environment: `pixi.toml` created from `environment.yml` (+ tasks `data, backend, frontend, test-api, test-web, test`). Run everything with `pixi run test`.
-
-| Level | Check | Result |
-|---|---|---|
-| 1 | `npx tsc -b` | clean |
-| 1 | `npm run lint` | 0 errors, 3 warnings (`react-refresh/only-export-components` in `src/map/MarsMap.tsx`) |
-| 1 | `npm run build` | OK |
-| 2 | `pytest tests` (5 spec + 6 new tests) | 10 passed, 1 skipped (rover elevation needs real data) |
-| 2 | `npm test` (4 existing + 1 new) | 5 passed |
-| 4 (partial) | backend on stub + Vite: `/api/health`, `/api/point`, `/api/route` via the :5173 proxy; `/`, `data/layers.json`, `samples.geojson`, layer PNG | all 200; demo route 0.8 s, 3 routes, 240-pt profiles, recommendation `cautious` |
-| 5 | `/sim/config` via proxy | 500, no sim server (M4/M5 not in branch), as expected |
-
-Not done yet: Level 3 (`pixi run data` downloads 1.8 GB, then the rover-elevation test runs) and the browser checklist in Level 4.
+- 28 add/add conflicts with M1 were resolved to `feat/data_platform` (M1 owns those paths). M1's C3 data is a superset, so M2/M3 needed no change.
+- `pixi run data` / `demo` rewrite tracked files (`data/metadata/sources.json` timestamps, `layers.json` loses `overlay_layers` without `data-env`, `package-lock.json` key order). Restore with `git checkout -- data/metadata frontend/public/data frontend/package-lock.json` unless you mean to commit new data.
+- `.pyc` files are tracked in git and show as modified after every test run; `git rm -r --cached '**/__pycache__'` would stop it.
