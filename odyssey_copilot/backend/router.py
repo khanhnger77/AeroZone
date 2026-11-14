@@ -139,18 +139,34 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
 
     msg = request.message.lower()
 
-    # 2. Sample inquiry check
-    sample_match = re.search(r"sample\s*(?:#|\s)?\s*(\d{1,2})", msg)
-    found_sample = None
-    if sample_match:
-        found_sample = get_sample_info(sample_match.group(1))
-    else:
-        for s in SAMPLES_DB:
-            if s["name"].lower() in msg or s["feature"].lower() in msg:
-                found_sample = s
-                break
+    # Detect route-planning intent FIRST (before sample name scan),
+    # so "find a route to Cheyava Falls" is not mistaken for a sample query.
+    ROUTE_KEYWORDS = [
+        "route", "path", "traverse", "navigate", "walk", "way to",
+        "đường", "đi đến", "tìm đường", "lộ trình",
+        "an toàn nhất", "safest", "how to get", "get to", "go to",
+        "từ vị trí", "từ", "đến",
+    ]
+    is_route_intent = any(k in msg for k in ROUTE_KEYWORDS)
 
-    if found_sample and "error" not in found_sample:
+    # 2. Sample inquiry check — skipped when user clearly asks for a route
+    found_sample = None
+    if not is_route_intent:
+        sample_match = re.search(r"sample\s*(?:#|\s)?\s*(\d{1,2})", msg)
+        if sample_match:
+            found_sample = get_sample_info(sample_match.group(1))
+        else:
+            for s in SAMPLES_DB:
+                if s["name"].lower() in msg or s["feature"].lower() in msg:
+                    found_sample = s
+                    break
+    else:
+        # Route intent but explicit sample number present (e.g. "route to sample #25")
+        sample_match = re.search(r"sample\s*(?:#|\s)?\s*(\d{1,2})", msg)
+        if sample_match:
+            found_sample = get_sample_info(sample_match.group(1))
+
+    if found_sample and "error" not in found_sample and not is_route_intent:
         action = CopilotAction(
             action_type="FOCUS_SAMPLE",
             payload=found_sample,
@@ -167,21 +183,27 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
         return ChatResponse(reply=reply, action=action, tools_called=["get_sample_info"])
 
     # 3. Route planning inquiry check
-    if any(k in msg for k in ["route", "path", "traverse", "plan", "navigate", "walk"]):
+    if is_route_intent:
         loc = request.current_location if isinstance(request.current_location, dict) else {}
         cur_lon = float(loc.get("lon")) if loc.get("lon") is not None else 77.4509
         cur_lat = float(loc.get("lat")) if loc.get("lat") is not None else 18.4446
         cur = {"lon": cur_lon, "lat": cur_lat}
         dest_lon, dest_lat = 77.4060, 18.4588  # Default: Delta Front
+        dest_name = "Delta Front"
 
-        if "cheyava" in msg or "25" in msg:
-            dest_lon, dest_lat = 77.3052, 18.4975
-        elif "séítah" in msg or "seitah" in msg:
-            dest_lon, dest_lat = 77.4440, 18.4320
-        elif "upper fan" in msg:
-            dest_lon, dest_lat = 77.3600, 18.4850
-        elif "landing" in msg or "butler" in msg:
-            dest_lon, dest_lat = 77.4509, 18.4446
+        # Resolve destination: check samples by name/feature first
+        for s in SAMPLES_DB:
+            if s["name"].lower() in msg or s["feature"].lower() in msg:
+                dest_lon, dest_lat = s["lon"], s["lat"]
+                dest_name = f"{s['name']} (Sample #{s['sample_no']})"
+                break
+        else:
+            # Then check landmarks
+            for lm in LANDMARKS_DB:
+                if lm["name"].lower() in msg:
+                    dest_lon, dest_lat = lm["lon"], lm["lat"]
+                    dest_name = lm["name"]
+                    break
 
         route_data = plan_route(cur.get("lon", 77.4509), cur.get("lat", 18.4446), dest_lon, dest_lat)
         action = CopilotAction(
@@ -191,10 +213,10 @@ def execute_offline_fallback(request: ChatRequest) -> ChatResponse:
                 "end": {"lon": dest_lon, "lat": dest_lat},
                 **route_data
             },
-            description=f"Planned traverse from current waypoint to [{dest_lon:.4f}, {dest_lat:.4f}]"
+            description=f"Planned traverse from current waypoint to {dest_name} [{dest_lon:.4f}, {dest_lat:.4f}]"
         )
         reply = (
-            f"Capcom copy. Traverse route calculated to [{dest_lon:.4f}°E, {dest_lat:.4f}°N]. "
+            f"Capcom copy. Traverse route calculated to {dest_name} [{dest_lon:.4f}°E, {dest_lat:.4f}°N]. "
             f"Straight-line distance: {route_data.get('straight_line_m', 0.0):.0f}m. "
             f"Recommended profile: '{route_data.get('recommended', 'balanced')}'. "
             f"Safety check: All waypoints remain below the 30.0° NO-GO slope threshold. Route overlay transmitted to map."
