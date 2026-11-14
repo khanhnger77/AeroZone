@@ -1,0 +1,283 @@
+{
+  "aoi_bounds": [
+    [
+      18.420068690703953,
+      77.28999373128244
+    ],
+    [
+      18.505012186164564,
+      77.46991873209423
+    ]
+  ],
+  "raster_layers": [
+    {
+      "id": "elevation",
+      "url": "data/layers/elevation.png",
+      "bounds": [
+        [
+          18.420068690703953,
+          77.28999373128244
+        ],
+        [
+          18.505012186164564,
+          77.46991873209423
+        ]
+      ],
+      "name": "Elevation (shaded relief)",
+      "group": "Topography",
+      "category": "derived",
+      "units": "m above MOLA areoid",
+      "legend": {
+        "type": "ramp",
+        "stops": [
+          [
+            -2572.6103515625,
+            "#1d2b53"
+          ],
+          [
+            -2080.0390625,
+            "#f3efe6"
+          ]
+        ],
+        "colors": [
+          "#1d2b53",
+          "#2f6f8f",
+          "#7fb069",
+          "#e6c36a",
+          "#f3efe6"
+        ],
+        "min": -2572.6103515625,
+        "max": -2080.0390625
+      },
+      "source": "USGS Astrogeology / NASA MRO HiRISE - Mars 2020 TRN DTM mosaic, doi:10.5066/P9REJ9JN",
+      "processing": "1 m DTM averaged to 5 m; hillshade az 315 alt 35; colour stretch p05-p95",
+      "stats": {
+        "min": -2611.661865234375,
+        "p05": -2572.6103515625,
+        "median": -2458.394287109375,
+        "mean": -2429.183349609375,
+        "p95": -2080.0390625,
+        "max": -1912.08251953125
+      }
+    },
+    {
+      "id": "slope",
+      "url": "data/layers/slope.png",
+      "bounds": [
+        [
+          18.420068690703953,
+          77.28999373128244
+        ],
+        [
+          18.505012186164564,
+          77.46991873209423
+        ]
+      ],
+      "name": "Slope",
+      "group": "Topography",
+      "category": "derived",
+      "units": "degrees",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#0d1b2a",
+          "#2a9d8f",
+          "#e9c46a",
+          "#e76f51",
+          "#9b2226"
+        ],
+        "min": 0,
+        "max": 35
+      },
+      "source": "USGS Astrogeology / NASA MRO HiRISE - Mars 2020 TRN DTM mosaic, doi:10.5066/P9REJ9JN",
+      "processing": "Central differences on 5 m grid (10 m baseline), cos(lat)-corrected dx",
+      "stats": {
+        "min": 0.002949764390982111,
+        "p05": 0.730785553989816,
+        "median": 4.527714688901044,
+        "mean": 6.31462646153027,
+        "p95": 18.062211811425506,
+        "max": 63.03975434103517
+      }
+    },
+    {
+      "id": "roughness",
+      "url": "data/layers/roughness.png",
+      "bounds": [
+        [
+          18.420068690703953,
+          77.28999373128244
+        ],
+        [
+          18.505012186164564,
+          77.46991873209423
+        ]
+      ],
+      "name": "Terrain roughness",
+      "group": "Topography",
+      "category": "derived",
+      "units": "m (RMS)",
+      "legend": {
+        "type": "ramp",
+        "colors": [
+          "#0b132b",
+          "#3a506b",
+          "#5bc0be",
+          "#f4d35e",
+          "#ee6c4d"
+        ],
+        "min": 0,
+        "max": 0.6
+      },
+      "source": "USGS Astrogeology / NASA MRO HiRISE - Mars 2020 TRN DTM mosaic, doi:10.5066/P9REJ9JN",
+      "processing": "RMS of (z - 9x9 m mean) at 1 m, per 5 m cell. Values < ~0.1 m near DTM noise.",
+      "stats": {
+        "min": 0.0005437270156107843,
+        "p05": 0.016775356605648994,
+        "median": 0.05616955831646919,
+        "mean": 0.07742969691753387,
+        "p95": 0.2044520378112793,
+        "max": 2.919724225997925
+      }
+    },
+    {
+      "id": "hazard",
+      "url": "data/layers/hazard.png",
+      "bounds": [
+        [
+          18.420068690703953,
+          77.28999373128244
+        ],
+        [
+          18.505012186164564,
+          77.46991873209423
+        ]
+      ],
+      "name": "Terrain hazard (prototype model)",
+      "group": "Safety",
+      "category": "model",
+      "units": "score 0-100",
+      "legend": {
+        "type": "classes",
+        "classes": [
+          {
+            "label": "Low",
+            "min": 0,
+            "max": 20,
+            "color": "#91cf60"
+          },
+          {
+            "label": "Moderate",
+            "min": 20,
+            "max": 40,
+            "color": "#fee08b"
+          },
+          {
+            "label": "Elevated",
+            "min": 40,
+            "max": 60,
+            "color": "#fc8d59"
+          },
+          {
+            "label": "High",
+            "min": 60,
+            "max": 80,
+            "color": "#d73027"
+          },
+          {
+            "label": "Severe",
+            "min": 80,
+            "max": 100,
+            "color": "#7b0041"
+          }
+        ]
+      },
+      "source": "USGS Astrogeology / NASA MRO HiRISE - Mars 2020 TRN DTM mosaic, doi:10.5066/P9REJ9JN",
+      "processing": "0.4*Slope + 0.3*Roughness + 0.2*Obstacle + 0.1*Crater (0-100 each); obstacle & crater factors unavailable, re-normalised",
+      "model": {
+        "formula": "0.4*Slope + 0.3*Roughness + 0.2*Obstacle + 0.1*Crater (0-100 each)",
+        "weights": {
+          "slope": 0.4,
+          "roughness": 0.3,
+          "obstacle": 0.2,
+          "crater": 0.1
+        },
+        "factor_available": {
+          "slope": true,
+          "roughness": true,
+          "obstacle": false,
+          "crater": false
+        },
+        "model_weight_coverage": 0.7,
+        "renormalised": true,
+        "slope_stops": [
+          [
+            0,
+            5,
+            15,
+            25,
+            30
+          ],
+          [
+            0,
+            10,
+            50,
+            90,
+            100
+          ]
+        ],
+        "roughness_stops": [
+          [
+            0,
+            0.1,
+            0.25,
+            0.5
+          ],
+          [
+            0,
+            25,
+            60,
+            100
+          ]
+        ],
+        "no_go_slope_deg": 30.0,
+        "classes": [
+          {
+            "min": 0,
+            "max": 20,
+            "label": "Low"
+          },
+          {
+            "min": 20,
+            "max": 40,
+            "label": "Moderate"
+          },
+          {
+            "min": 40,
+            "max": 60,
+            "label": "Elevated"
+          },
+          {
+            "min": 60,
+            "max": 80,
+            "label": "High"
+          },
+          {
+            "min": 80,
+            "max": 100,
+            "label": "Severe"
+          }
+        ],
+        "class_fraction": {
+          "Low": 0.6591529243723379,
+          "Moderate": 0.24309812559155763,
+          "Elevated": 0.08135410308804147,
+          "High": 0.014498603539871625,
+          "Severe": 0.0018962434081914177
+        },
+        "no_go_fraction": 0.0023604110187897096,
+        "disclaimer": "Prototype weights and thresholds. Not a NASA-certified safety assessment. A low score does not mean a location is safe for human exploration."
+      }
+    }
+  ]
+}
