@@ -85,6 +85,55 @@ def test_collider_matches_render_grid(physics_cfg):
         world.close()
 
 
+def corridor_grid(nx: int = 1834, ny: int = 731, spacing: float = 5.0) -> Grid:
+    """Non-square grid the size of the real demo corridor (well above one 512 x 512 heightfield)."""
+    x0, y0 = -0.5 * (nx - 1) * spacing, -0.5 * (ny - 1) * spacing
+    X, Y = np.meshgrid(x0 + spacing * np.arange(nx), y0 + spacing * np.arange(ny))
+    h = (3.0 * np.sin(X / 60.0) * np.cos(Y / 45.0) + 0.002 * X).astype(np.float32)
+    return Grid(h=h, x0=x0, y0=y0, dx=spacing, dy=spacing, lon_w=0, lon_e=0, lat_s=0, lat_n=0,
+                res_src_m=spacing, meta={"label": "corridor-sized test"})
+
+
+@needs_pybullet
+def test_large_collider_matches_render_grid(physics_cfg):
+    grid = corridor_grid()
+    world = PhysicsWorld(physics_cfg)
+    try:
+        world.set_terrain(grid)
+        assert len(world.terrain_bodies) > 1
+        rng = np.random.default_rng(1)
+        x_min, x_max, y_min, y_max = grid.extent()
+        seam_x = grid.x0 + 511 * grid.dx                        # shared edge of the first two tiles
+        pts = list(zip(rng.uniform(x_min + 5, x_max - 5, 300), rng.uniform(y_min + 5, y_max - 5, 300)))
+        pts += [(seam_x + dx, y) for dx in (-0.5, 0.0, 0.5) for y in np.linspace(y_min + 5, y_max - 5, 20)]
+        errs = []
+        for x, y in pts:
+            z_ray = world.ground_height_at(x, y)
+            assert z_ray is not None, (x, y)
+            errs.append(abs(z_ray - grid.height_at(x, y)))
+        assert max(errs) < 0.15, max(errs)
+    finally:
+        world.close()
+
+
+@needs_pybullet
+def test_wheeled_drives_across_tile_seam(physics_cfg, rover_cfg):
+    grid = corridor_grid()
+    router = RoverModelRouter(dict(physics_cfg, model="wheeled"), rover_cfg)
+    try:
+        router.set_terrain(grid)
+        seam_x = grid.x0 + 511 * grid.dx
+        router.spawn(seam_x - 10.0, 0.0, 0.0)
+        simulate(router, 3.0)                      # settle
+        router.set_inputs(1.0, 0.0)
+        simulate(router, 20.0)                     # drive east over the seam
+        b = router.pose()
+        assert b.x > seam_x + 5.0
+        assert b.z == pytest.approx(float(grid.height_at(b.x, b.y)), abs=0.2)
+    finally:
+        router.close()
+
+
 @needs_pybullet
 def test_free_fall_at_mars_gravity(physics_cfg):
     import pybullet as p
