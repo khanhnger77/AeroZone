@@ -1,115 +1,106 @@
-"""Download the raw NASA/USGS source datasets and record provenance.
+"""Download the v1.0 sources: the HiRISE Jezero DTM, its label, and the MMGIS rover JSON snapshots.
 
-Idempotent: files already present with the expected size are skipped.
-Writes data/metadata/sources.json (URL, size, sha256, retrieval time, citation).
+Why a snapshot: MMGIS (mars.nasa.gov/mmgis-maps) sends no CORS headers, so the web app cannot read
+it live; M1 freezes it into static files. The DTM download is idempotent (size check against the
+remote Content-Length) because it is ~1.8 GB. Provenance (url, size, sha256, retrieval time,
+citation) goes to data/metadata/sources.json, which is tracked in git.
 
-Run:  python scripts/download_data.py          (all)
-      python scripts/download_data.py --skip-dtm
+Usage: python scripts/download_data.py [--skip-dtm]
 """
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import hashlib
-import json
 import sys
+from pathlib import Path
 
 import requests
 
-from config import METADATA, RAW
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _http import download  # noqa: E402
+from config import DTM_DIR, DTM_FILENAME, METADATA, PERSEVERANCE_DIR, ROOT, info, read_json, warn, write_json  # noqa: E402
 
-S3 = "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE"
-MMGIS = "https://mars.nasa.gov/mmgis-maps/M20/Layers/json"
+_S3 = "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/"
+_MMGIS = "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/"
 
-SOURCES = [
-    {
-        "id": "hirise_dtm",
-        "file": RAW / "hirise_dtm" / "JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
-        "url": f"{S3}/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
-        "kind": "observation-derived (stereo photogrammetry DTM)",
-        "citation": "Fergason, R.L., Galuszka, D.M., Hare, T.M., Mayer, D.P., Redding, B.L. (2020). "
-                    "Mars 2020 Terrain Relative Navigation HiRISE DTM Mosaic. USGS Astrogeology. "
-                    "doi:10.5066/P9REJ9JN (CC0)",
-        "big": True,
+SOURCES: dict[str, dict[str, object]] = {
+    "hirise_dtm": {
+        "url": _S3 + DTM_FILENAME,
+        "dest": DTM_DIR / DTM_FILENAME,
+        "required": True,
+        "dtm": True,
+        "citation": (
+            "USGS Astrogeology / Mars 2020 TRN team, HiRISE DTM mosaic of Jezero crater, 1 m/post, "
+            "MOLA-controlled, heights above the MOLA areoid (Fergason et al. 2020, LPSC 51, #2020)."
+        ),
     },
-    {
-        "id": "hirise_dtm_label",
-        "file": RAW / "hirise_dtm" / "JEZ_DTM_1m.lbl",
-        "url": "https://astrogeology.usgs.gov/ckan/dataset/381ba037-d8a9-4cea-86be-374e4951afe3/resource/"
-               "bd39aeaf-231d-4732-b333-7636bce607ff/download/"
-               "jez_hirise_soc_006_dtm_molatopography_deltageoid_1m_eqc_latts0_lon0_blend40.lbl",
-        "kind": "metadata (ISIS label)",
-        "citation": "USGS Astrogeology, doi:10.5066/P9REJ9JN",
+    "hirise_dtm_label": {
+        "url": _S3 + DTM_FILENAME.replace(".tif", ".lbl"),
+        "dest": DTM_DIR / "JEZ_DTM_1m.lbl",
+        "required": False,
+        "dtm": True,
+        "citation": "ISIS / PDS label of the Jezero HiRISE DTM mosaic (USGS Astrogeology).",
     },
-    {
-        "id": "m20_waypoints",
-        "file": RAW / "perseverance" / "M20_waypoints.json",
-        "url": f"{MMGIS}/M20_waypoints.json",
-        "kind": "observation (rover localization)",
-        "citation": "NASA/JPL-Caltech Mars 2020 MMGIS, Perseverance waypoints",
+    "m20_waypoints": {
+        "url": _MMGIS + "M20_waypoints.json",
+        "dest": PERSEVERANCE_DIR / "M20_waypoints.json",
+        "required": True,
+        "dtm": False,
+        "citation": "NASA/JPL-Caltech, Mars 2020 MMGIS rover waypoints (localized positions per sol).",
     },
-    {
-        "id": "m20_traverse",
-        "file": RAW / "perseverance" / "M20_traverse.json",
-        "url": f"{MMGIS}/M20_traverse.json",
-        "kind": "observation (rover traverse)",
-        "citation": "NASA/JPL-Caltech Mars 2020 MMGIS, Perseverance traverse path",
+    "m20_traverse": {
+        "url": _MMGIS + "M20_traverse.json",
+        "dest": PERSEVERANCE_DIR / "M20_traverse.json",
+        "required": True,
+        "dtm": False,
+        "citation": "NASA/JPL-Caltech, Mars 2020 MMGIS rover traverse (per-sol drive polylines).",
     },
-]
-
-HEADERS = {"User-Agent": "mars-odyssey-hackathon/0.1"}
+}
 
 
-def sha256(path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 22), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--skip-dtm", action="store_true", help="do not download the 1.8 GB DTM or its label")
+    args = ap.parse_args(argv)
 
-
-def download(src: dict) -> dict:
-    path = src["file"]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    head = requests.head(src["url"], headers=HEADERS, allow_redirects=True, timeout=60)
-    remote_size = int(head.headers.get("Content-Length", 0)) or None
-    if path.exists() and (remote_size is None or path.stat().st_size == remote_size):
-        print(f"[skip] {path.name} already present")
-    else:
-        print(f"[get ] {src['url']}")
-        with requests.get(src["url"], headers=HEADERS, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            tmp = path.with_suffix(path.suffix + ".part")
-            with open(tmp, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-            tmp.rename(path)
-    return {
-        "id": src["id"],
-        "url": src["url"],
-        "local_path": str(path.relative_to(RAW.parent.parent)),
-        "bytes": path.stat().st_size,
-        "sha256": sha256(path),
-        "kind": src["kind"],
-        "citation": src["citation"],
-        "retrieved_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-    }
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--skip-dtm", action="store_true", help="skip the 1.8 GB DTM")
-    args = ap.parse_args()
-    METADATA.mkdir(parents=True, exist_ok=True)
-    out = METADATA / "sources.json"
-    records = json.loads(out.read_text()) if out.exists() else {}
-    for src in SOURCES:
-        if args.skip_dtm and src.get("big"):
+    sources_path = METADATA / "sources.json"
+    previous = read_json(sources_path) if sources_path.exists() else {}
+    out: dict[str, dict[str, object]] = {}
+    failed = False
+    for sid, src in SOURCES.items():
+        dest = Path(src["dest"])  # type: ignore[arg-type]
+        rel = dest.relative_to(ROOT).as_posix()
+        if args.skip_dtm and src["dtm"]:
+            info(f"  - {sid}: skipped (--skip-dtm)")
+            if sid in previous:
+                out[sid] = previous[sid]
             continue
-        records[src["id"]] = download(src)
-    out.write_text(json.dumps(records, indent=2))
-    print(f"provenance -> {out}")
-    return 0
+        try:
+            rec = download(str(src["url"]), dest)
+        except (requests.RequestException, OSError) as exc:
+            if src["required"] and not dest.exists():
+                warn(f"{sid}: download failed: {exc}")
+                failed = True
+            else:
+                warn(f"{sid}: download failed, keeping existing state: {exc}")
+            if sid in previous:
+                out[sid] = previous[sid]
+            continue
+        retrieved = rec["retrieved_utc"] or previous.get(sid, {}).get("retrieved_utc")
+        if retrieved is None:
+            from _http import utc_now
+
+            retrieved = utc_now()
+        out[sid] = {
+            "url": rec["url"],
+            "path": rel,
+            "size": rec["size"],
+            "sha256": rec["sha256"],
+            "retrieved_utc": retrieved,
+            "citation": src["citation"],
+        }
+    write_json(sources_path, out)
+    info(f"wrote {sources_path.relative_to(ROOT)}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

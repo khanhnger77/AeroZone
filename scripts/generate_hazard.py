@@ -1,77 +1,141 @@
-"""Module A - prototype terrain hazard model.
+"""Combine factor scores into the prototype hazard raster (C2) and document the model.
 
-Hazard = 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*ObstacleRisk + 0.1*CraterRisk   (each 0-100)
+Hazard = 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*Obstacle + 0.1*Crater (weights in hazard.yaml).
 
-PROTOTYPE ASSUMPTIONS - not NASA-certified astronaut safety thresholds.
-  * SlopeRisk: piecewise-linear 0 deg->0, 5->10, 15->50, 25->90, >=30->100.
-    (Breakpoints are prototype choices loosely informed by Apollo-era EVA/LRV experience that
-    slopes >~15-20 deg strongly increase walking effort and fall risk.)
-  * RoughnessRisk: 0 m->0, 0.10->25, 0.25->60, >=0.5 m->100 (RMS of 1 m detrended relief).
-  * ObstacleRisk, CraterRisk: NO DATASET INTEGRATED YET -> marked "unavailable", NOT zero.
-    The score is re-normalised over the available weights and the coverage is reported.
-  * No-go mask: slope >= 30 deg (treated as impassable by the route planner).
-
-Outputs: data/analysis/{slope_risk,roughness_risk,hazard}_5m.tif, data/metadata/hazard_model.json
+Why renormalise instead of zero-filling: in v1.0 the obstacle and crater factors do not exist. Treating
+them as 0 would make every cell look safer than the evidence says; renormalising over the available
+0.7 of weight keeps the 0-100 scale meaningful and the missing coverage is reported explicitly
+(`model_weight_coverage`, `renormalised`). [v1.1] Factors listed in `enabled_factors` beyond slope and
+roughness are read from the C2-ext rasters; a cell where such a factor is NaN is renormalised over the
+factors present in that cell, and the share of those cells is `partial_factor_fraction`. With the
+default config the output is byte-identical to v1.0.
 """
 from __future__ import annotations
 
-import json
+import sys
+from pathlib import Path
 
 import numpy as np
-import rasterio
 
-from config import ANALYSIS, METADATA, PROCESSED
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import ANALYSIS, METADATA, PROCESSED, ROOT, info, load_yaml, read_grid_tif, warn, write_grid_tif, write_json  # noqa: E402
 
-SLOPE_STOPS = ([0, 5, 15, 25, 30], [0, 10, 50, 90, 100])
-ROUGH_STOPS = ([0, 0.10, 0.25, 0.5], [0, 25, 60, 100])
-WEIGHTS = {"slope": 0.4, "roughness": 0.3, "obstacle": 0.2, "crater": 0.1}
-AVAILABLE = {"slope": True, "roughness": True, "obstacle": False, "crater": False}
-NO_GO_SLOPE_DEG = 30.0
-CLASSES = [(0, 20, "Low"), (20, 40, "Moderate"), (40, 60, "Elevated"), (60, 80, "High"), (80, 101, "Severe")]
+CORE_FACTORS = ("slope", "roughness")
 
 
-def read(name):
-    with rasterio.open(PROCESSED / f"{name}.tif") as ds:
-        return ds.read(1), ds.profile
+def piecewise(x: np.ndarray, stops: list[list[float]]) -> np.ndarray:
+    """Piecewise-linear score, clamped at both ends, NaN preserved."""
+    xs, ys = np.asarray(stops[0], dtype=np.float64), np.asarray(stops[1], dtype=np.float64)
+    out = np.interp(x.astype(np.float64), xs, ys).astype(np.float32)
+    out[~np.isfinite(x)] = np.nan
+    return out
 
 
-def main() -> None:
-    ANALYSIS.mkdir(parents=True, exist_ok=True)
-    slope, profile = read("slope_5m")
-    rough, _ = read("roughness_5m")
+def combine(factors: dict[str, np.ndarray], weights: dict[str, float]) -> tuple[np.ndarray, float]:
+    """Weighted mean over the factors present per cell. Core factors must be present.
 
-    risk = {
-        "slope": np.interp(slope, *SLOPE_STOPS),
-        "roughness": np.interp(rough, *ROUGH_STOPS),
-    }
-    w_avail = sum(w for k, w in WEIGHTS.items() if AVAILABLE[k])
-    hazard = sum(WEIGHTS[k] * risk[k] for k in risk) / w_avail
-    hazard[np.isnan(slope)] = np.nan
+    Returns (hazard, partial_fraction). With only the core factors this reduces exactly to
+    (0.4*S + 0.3*R) / 0.7, computed in float64 then cast, as in v1.0.
+    """
+    num = np.zeros(next(iter(factors.values())).shape, dtype=np.float64)
+    den = np.zeros_like(num)
+    core_ok = np.ones(num.shape, dtype=bool)
+    partial = np.zeros(num.shape, dtype=bool)
+    for name, f in factors.items():
+        ok = np.isfinite(f)
+        w = float(weights[name])
+        num += np.where(ok, w * f.astype(np.float64), 0.0)
+        den += np.where(ok, w, 0.0)
+        if name in CORE_FACTORS:
+            core_ok &= ok
+        else:
+            partial |= ~ok
+    with np.errstate(invalid="ignore", divide="ignore"):
+        hz = num / den
+    hz[~core_ok] = np.nan
+    valid = np.isfinite(hz)
+    partial_fraction = float((partial & valid).sum() / max(int(valid.sum()), 1))
+    return hz.astype(np.float32), partial_fraction
 
-    for name, arr in [("slope_risk_5m", risk["slope"]), ("roughness_risk_5m", risk["roughness"]),
-                      ("hazard_5m", hazard)]:
-        with rasterio.open(ANALYSIS / f"{name}.tif", "w", **profile) as dst:
-            dst.write(arr.astype("float32"), 1)
 
-    v = hazard[np.isfinite(hazard)]
-    class_frac = {label: float(((v >= lo) & (v < hi)).mean()) for lo, hi, label in CLASSES}
+def main() -> int:
+    cfg = load_yaml("hazard.yaml")
+    weights: dict[str, float] = {k: float(v) for k, v in cfg["weights"].items()}
+    enabled = list(cfg.get("enabled_factors") or list(CORE_FACTORS))
+    for core in CORE_FACTORS:
+        if core not in enabled:
+            warn(f"hazard.yaml: core factor '{core}' cannot be disabled; using it anyway")
+            enabled.insert(0, core)
+
+    slope_p, rough_p = PROCESSED / "slope_5m.tif", PROCESSED / "roughness_5m.tif"
+    if not (slope_p.exists() and rough_p.exists()):
+        warn("slope/roughness rasters missing (run scripts/process_terrain.py)")
+        return 1
+    slope = read_grid_tif(slope_p)
+    rough = read_grid_tif(rough_p)
+    slope_risk = piecewise(slope, cfg["slope_stops"])
+    rough_risk = piecewise(rough, cfg["roughness_stops"])
+    write_grid_tif(ANALYSIS / "slope_risk_5m.tif", slope_risk)
+    write_grid_tif(ANALYSIS / "roughness_risk_5m.tif", rough_risk)
+
+    factors: dict[str, np.ndarray] = {"slope": slope_risk, "roughness": rough_risk}
+    available = {name: name in CORE_FACTORS for name in weights}
+    for name in enabled:
+        if name in CORE_FACTORS:
+            continue
+        path = ROOT / cfg["factor_rasters"][name]
+        if not path.exists():
+            warn(f"factor '{name}' enabled but {path.relative_to(ROOT)} is missing (run pixi run data-env); skipped")
+            continue
+        factors[name] = read_grid_tif(path)
+        available[name] = True
+
+    hazard, partial_fraction = combine(factors, weights)
+    write_grid_tif(ANALYSIS / "hazard_5m.tif", hazard)
+
+    coverage = round(sum(w for k, w in weights.items() if available[k]), 6)
+    valid = np.isfinite(hazard)
+    n_valid = max(int(valid.sum()), 1)
+    hv = hazard[valid]
+    class_fraction = {}
+    classes = cfg["classes"]
+    for i, c in enumerate(classes):
+        upper = hv <= c["max"] if i == len(classes) - 1 else hv < c["max"]
+        class_fraction[c["label"]] = round(float(((hv >= c["min"]) & upper).sum() / n_valid), 6)
+    sv = slope[np.isfinite(slope)]
+    no_go = round(float((sv >= cfg["no_go_slope_deg"]).sum() / max(sv.size, 1)), 6)
+
+    used = [k for k in weights if available[k]]
+    formula = " + ".join(f"{weights[k]:g}*{k.capitalize()}{'Risk' if k in CORE_FACTORS else ''}" for k in weights)
+    if coverage < 1.0:
+        formula = (f"Hazard = ({' + '.join(f'{weights[k]:g}*{k.capitalize()}Risk' for k in used)}) / {coverage:g}"
+                   f"  [full model: {formula}; renormalised over the available weight]")
+    else:
+        formula = f"Hazard = {formula}"
+
     model = {
-        "formula": "0.4*Slope + 0.3*Roughness + 0.2*Obstacle + 0.1*Crater (0-100 each)",
-        "weights": WEIGHTS,
-        "factor_available": AVAILABLE,
-        "model_weight_coverage": w_avail,
-        "renormalised": True,
-        "slope_stops": SLOPE_STOPS, "roughness_stops": ROUGH_STOPS,
-        "no_go_slope_deg": NO_GO_SLOPE_DEG,
-        "classes": [{"min": lo, "max": min(hi, 100), "label": l} for lo, hi, l in CLASSES],
-        "class_fraction": class_frac,
-        "no_go_fraction": float((slope >= NO_GO_SLOPE_DEG).mean()),
-        "disclaimer": "Prototype weights and thresholds. Not a NASA-certified safety assessment. "
-                      "A low score does not mean a location is safe for human exploration.",
+        "formula": formula,
+        "weights": weights,
+        "factor_available": available,
+        "model_weight_coverage": coverage,
+        "renormalised": bool(coverage < 1.0),
+        "slope_stops": cfg["slope_stops"],
+        "roughness_stops": cfg["roughness_stops"],
+        "no_go_slope_deg": cfg["no_go_slope_deg"],
+        "classes": classes,
+        "class_fraction": class_fraction,
+        "no_go_fraction": no_go,
+        "disclaimer": cfg["disclaimer"],
+        # [v1.1, PROPOSED C2-ext] optional, additive keys
+        "factor_quality": {k: (cfg["factor_quality"][k] if available[k] else "unavailable") for k in weights},
+        "factor_sources": {k: cfg["factor_sources"][k] for k in weights if available[k]},
+        "partial_factor_fraction": round(partial_fraction, 6),
     }
-    (METADATA / "hazard_model.json").write_text(json.dumps(model, indent=2))
-    print(json.dumps({"class_fraction": class_frac, "no_go_fraction": model["no_go_fraction"]}, indent=1))
+    write_json(METADATA / "hazard_model.json", model)
+    info(f"wrote data/analysis/{{hazard,slope_risk,roughness_risk}}_5m.tif and hazard_model.json "
+         f"(factors: {', '.join(used)}; coverage {coverage:g})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

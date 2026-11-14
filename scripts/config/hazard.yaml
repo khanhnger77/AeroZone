@@ -1,0 +1,48 @@
+# Prototype hazard model (C2). Hazard = 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*Obstacle + 0.1*Crater
+#
+# enabled_factors: v1.0 default is [slope, roughness]; the score is then renormalised over the
+# available 0.7 of weight (unavailable factors are NOT treated as zero).
+# [v1.1] Add `obstacle` and/or `crater` once `pixi run data-env` has produced
+# data/analysis/{obstacle,crater}_risk_5m.tif. With both on, coverage = 1.0 and renormalised = false.
+enabled_factors: [slope, roughness]
+
+weights:
+  slope: 0.4
+  roughness: 0.3
+  obstacle: 0.2
+  crater: 0.1
+
+# Piecewise-linear stops [[inputs], [scores]]; values beyond the last stop clamp.
+slope_stops: [[0, 5, 15, 25, 30], [0, 10, 50, 90, 100]]          # degrees -> 0..100
+roughness_stops: [[0, 0.1, 0.25, 0.5], [0, 25, 60, 100]]          # metres  -> 0..100
+no_go_slope_deg: 30
+
+classes:
+  - {min: 0, max: 20, label: Low}
+  - {min: 20, max: 40, label: Moderate}
+  - {min: 40, max: 60, label: Elevated}
+  - {min: 60, max: 80, label: High}
+  - {min: 80, max: 100, label: Severe}
+
+factor_rasters:
+  slope: data/analysis/slope_risk_5m.tif
+  roughness: data/analysis/roughness_risk_5m.tif
+  obstacle: data/analysis/obstacle_risk_5m.tif
+  crater: data/analysis/crater_risk_5m.tif
+
+factor_quality:
+  slope: derived_dtm
+  roughness: derived_dtm
+  obstacle: proxy_geologic_units
+  crater: derived_dtm
+
+factor_sources:
+  slope: "HiRISE DTM 1 m (USGS), slope on the 5 m mean surface"
+  roughness: "HiRISE DTM 1 m (USGS), RMS residual about the 9 x 9 m moving mean"
+  obstacle: "Stack et al. 2020 photogeologic units x geology_risk.yaml, max with THEMIS TI prior"
+  crater: "HiRISE DTM 1 m (USGS), depression detection (fill - DTM)"
+
+disclaimer: >-
+  Prototype hazard index for route-planning demonstrations only. It is derived from orbital
+  topography with heuristic weights and has not been validated against rover traversability data.
+  It is not a mission-planning product.

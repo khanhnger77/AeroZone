@@ -1,0 +1,90 @@
+{
+  "category": "observation",
+  "source": "https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/PERSEVERANCE/meda.html",
+  "pds_release": "Release 16 (2026-08-11)",
+  "retrieved_utc": "2026-11-14T04:10:25Z",
+  "sols": [
+    {
+      "sol": 168,
+      "t_air_mean_k": 219.64,
+      "t_air_min_k": 196.05,
+      "t_air_max_k": 254.28,
+      "p_mean_pa": 730.42,
+      "rh_mean_pct": 1.251,
+      "wind_mean_m_s": 3.19,
+      "n_samples": 51161
+    },
+    {
+      "sol": 385,
+      "t_air_mean_k": 227.16,
+      "t_air_min_k": 197.35,
+      "t_air_max_k": 265.96,
+      "p_mean_pa": 678.5,
+      "rh_mean_pct": 1.4,
+      "n_samples": 48129
+    },
+    {
+      "sol": 535,
+      "t_air_mean_k": 214.41,
+      "t_air_min_k": 190.27,
+      "t_air_max_k": 252.63,
+      "p_mean_pa": 771.72,
+      "rh_mean_pct": 6.488,
+      "n_samples": 51212
+    },
+    {
+      "sol": 718,
+      "t_air_mean_k": 222.16,
+      "t_air_min_k": 194.63,
+      "t_air_max_k": 260.85,
+      "p_mean_pa": 737.29,
+      "rh_mean_pct": 1.733,
+      "n_samples": 48246
+    },
+    {
+      "sol": 929,
+      "t_air_mean_k": 225.46,
+      "t_air_min_k": 199.64,
+      "t_air_max_k": 265.93,
+      "p_mean_pa": 630.5,
+      "rh_mean_pct": 0.754,
+      "n_samples": 46373
+    },
+    {
+      "sol": 1115,
+      "t_air_mean_k": 233.17,
+      "t_air_min_k": 199.44,
+      "t_air_max_k": 258.4,
+      "p_mean_pa": 766.6,
+      "rh_mean_pct": 0.644,
+      "n_samples": 33946
+    },
+    {
+      "sol": 1247,
+      "t_air_mean_k": 219.82,
+      "t_air_min_k": 191.09,
+      "t_air_max_k": 254.96,
+      "p_mean_pa": 722.28,
+      "rh_mean_pct": 1.136,
+      "n_samples": 54711
+    },
+    {
+      "sol": 1351,
+      "t_air_mean_k": 222.12,
+      "t_air_min_k": 193.18,
+      "t_air_max_k": 263.54,
+      "p_mean_pa": 690.17,
+      "rh_mean_pct": 6.481,
+      "n_samples": 48061
+    },
+    {
+      "sol": 1783,
+      "t_air_mean_k": 220.32,
+      "t_air_min_k": 197.04,
+      "t_air_max_k": 258.45,
+      "p_mean_pa": 738.55,
+      "rh_mean_pct": 5.071,
+      "n_samples": 44394
+    }
+  ]
+}

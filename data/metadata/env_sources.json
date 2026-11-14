@@ -1,0 +1,111 @@
+{
+  "stack2020_units": {
+    "url": "https://static-content.springer.com/esm/art%3A10.1007%2Fs11214-020-00739-x/MediaObjects/11214_2020_739_MOESM3_ESM.zip",
+    "path": "data/raw/geology/stack2020/11214_2020_739_MOESM3_ESM.zip",
+    "size": 3476604,
+    "sha256": "970e4c78ae6dc689c99e46eddb4be184704a56952008d0558f643e816e29b118",
+    "retrieved_utc": "2026-11-14T03:25:41Z",
+    "citation": "Stack, K. M. et al. (2020) Photogeologic map of the Perseverance rover field site in Jezero crater constructed by the Mars 2020 Science Team. Space Sci. Rev. 216, 127. doi:10.1007/s11214-020-00739-x",
+    "licence": "CC BY 4.0 (Space Science Reviews open access)",
+    "landing_page": "https://link.springer.com/article/10.1007/s11214-020-00739-x"
+  },
+  "robbins_craters": {
+    "url": "https://astrogeology.usgs.gov/pygeoapi/collections/mars/robbinsv1/items",
+    "path": null,
+    "size": null,
+    "sha256": null,
+    "retrieved_utc": null,
+    "citation": "Robbins, S. J. and Hynek, B. M. (2012) A new global database of Mars impact craters >= 1 km. J. Geophys. Res. 117, E05004.",
+    "licence": "Public domain (USGS OGC API) / CC BY (Robbins & Hynek 2012)",
+    "landing_page": "https://craters.sjrdesign.net/",
+    "note": "queried at build time by its processing script"
+  },
+  "mcd": {
+    "url": "https://www-mars.lmd.jussieu.fr/",
+    "path": "data/raw/climate/mcd/",
+    "size": null,
+    "sha256": null,
+    "retrieved_utc": null,
+    "citation": "Millour, E. et al. Mars Climate Database v6.1 (LMD/ESA/CNES). User manual: https://www-mars.lmd.jussieu.fr/mars/info_web/user_manual_6.1.pdf",
+    "licence": "Free for research on request (LMD / ESA / CNES)",
+    "landing_page": "https://www-mars.lmd.jussieu.fr/mars/access.html",
+    "manual": true
+  },
+  "mdad": {
+    "url": "https://dataverse.harvard.edu/api/access/datafile/3607412",
+    "path": "data/raw/climate/mdad/MDAD.tab",
+    "size": 2111103,
+    "sha256": "33e767d3b8ca095be3a1ed21298dce0260203e8c7701c2118e97b7589add1dc8",
+    "retrieved_utc": "2026-11-14T03:25:49Z",
+    "citation": "Battalio, M. and Wang, H. (2021) The Mars Dust Activity Database (MDAD): a comprehensive statistical study of dust storm sequences. Icarus 354, 114059. Harvard Dataverse doi:10.7910/DVN/F8R2JX",
+    "licence": "CC0 1.0",
+    "landing_page": "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910%2FDVN%2FF8R2JX"
+  },
+  "donki": {
+    "url": "https://ccmc.gsfc.nasa.gov/DONKI-API/get/",
+    "path": null,
+    "size": null,
+    "sha256": null,
+    "retrieved_utc": null,
+    "citation": "NASA CCMC Space Weather Database Of Notifications, Knowledge, Information (DONKI).",
+    "licence": "Public domain (NASA CCMC)",
+    "landing_page": "https://ccmc.gsfc.nasa.gov/DONKI/",
+    "note": "queried at build time by its processing script"
+  },
+  "langlais2019": {
+    "url": "https://zenodo.org/records/3876714/files/Langlais2019.sh.gz",
+    "path": "data/raw/space_weather/Langlais2019.sh.gz",
+    "size": 84853,
+    "sha256": "3cad9e268f0673be1702f1df504a4cbcb8dba4480c7b3f629921911488fe247b",
+    "retrieved_utc": "2026-11-14T03:25:51Z",
+    "citation": "Langlais, B., Thebault, E., Houliez, A., Purucker, M. E. and Lillis, R. J. (2019) A new model of the crustal magnetic field of Mars using MGS and MAVEN. J. Geophys. Res. Planets 124, 1542-1569. doi:10.1029/2018JE005854",
+    "licence": "CC BY 4.0",
+    "landing_page": "https://zenodo.org/records/3876714"
+  },
+  "noah_h_jezero": {
+    "url": "https://ndownloader.figshare.com/files/33917705",
+    "path": "data/raw/geology/noah_h/NOAH-H_terrain_classifications_of_Jezero_Crater_Mars.zip",
+    "size": 352353484,
+    "sha256": "2e3d98eeec4a681d18f2fcc528f2f553d5a05b8099ff0f5ce52b1eb4056d6bda",
+    "retrieved_utc": "2026-11-14T03:33:26Z",
+    "citation": "Wright, J. et al. (2022) NOAH-H terrain classifications of Jezero crater, Mars. The Open University, dataset. doi:10.21954/ou.rd.17121482.v1",
+    "licence": "CC BY 4.0",
+    "landing_page": "https://doi.org/10.21954/ou.rd.17121482.v1"
+  },
+  "themis_ti": {
+    "url": "https://asc-astropedia.s3.us-west-2.amazonaws.com/Mars/Odyssey/THEMIS-Global-Thermal-Inertia-Mosaic/Quantitative-32-Bit/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub",
+    "path": "data/raw/geology/themis_ti_aoi.tif",
+    "size": 63539,
+    "sha256": "3baf62b01bd37c9ecd4395910fca10623f72d46fd6b47b60a8b874c168f49579",
+    "retrieved_utc": "2026-11-14T03:42:07Z",
+    "citation": "Fergason, R. L., Christensen, P. R. and Kieffer, H. H. (2006) High-resolution thermal inertia derived from THEMIS. J. Geophys. Res. 111, E12004. USGS Astrogeology THEMIS quantitative thermal inertia mosaic 00N060E, 100 m/px.",
+    "licence": "Public domain (USGS / NASA)",
+    "landing_page": "https://astrogeology.usgs.gov/search/map/themis_thermal_inertia_mosaic_quantitative_00n060e_100mpp",
+    "method": "vsicurl AOI window"
+  },
+  "meda": {
+    "url": "https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/",
+    "path": "data/raw/climate/meda",
+    "size": 131914387,
+    "sha256": null,
+    "retrieved_utc": "2026-11-14T04:10:25Z",
+    "citation": "Rodriguez-Manfredi, J. A. et al. Mars 2020 MEDA bundle, NASA PDS Atmospheres Node, doi:10.17189/1522849.",
+    "licence": "Public domain (NASA PDS)",
+    "landing_page": "https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/PERSEVERANCE/meda.html",
+    "sols": [
+      13,
+      168,
+      385,
+      535,
+      718,
+      929,
+      1115,
+      1247,
+      1351,
+      1577,
+      1783,
+      2022
+    ],
+    "pds_release": "Release 16 (2026-08-11)"
+  }
+}

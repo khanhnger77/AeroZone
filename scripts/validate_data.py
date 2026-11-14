@@ -1,81 +1,119 @@
-"""Validate raw datasets before any integration.
+"""Sanity-check the raw sources before anything is derived from them.
 
-Checks
-  1. DTM CRS is the expected Mars 2000 sphere equirectangular (not Earth WGS84).
-  2. AOI lies fully inside the DTM extent.
-  3. NoData fraction inside the AOI.
-  4. Fraction of Perseverance waypoints inside the DTM / AOI.
-  5. Independent elevation cross-check: DTM height vs rover-reported elevation (elev_geoid)
-     at each waypoint. Both are heights above the MOLA areoid, so the difference should be
-     small; a large bias would mean a datum or georeferencing problem.
-
-Writes data/metadata/validation_report.json.
+Why: a wrong CRS (ellipsoid instead of the Mars 2000 sphere), an AOI that falls off the DTM, or a
+rover track in a different datum would silently corrupt every downstream layer. The checks here
+are cheap and their results are written to data/metadata/validation_report.json, which is tracked
+in git so reviewers can see what the pipeline saw.
 """
 from __future__ import annotations
 
-import json
+import sys
+from pathlib import Path
 
 import numpy as np
-import rasterio
 
-from config import AOI, MARS_RADIUS_M, METADATA, RAW, deg_to_proj
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import (  # noqa: E402
+    AOI,
+    DTM_PATH,
+    MARS_RADIUS_M,
+    METADATA,
+    PERSEVERANCE_DIR,
+    ROOT,
+    deg_to_proj,
+    grid_bounds_proj,
+    in_aoi,
+    info,
+    proj_to_deg,
+    read_json,
+    warn,
+    write_json,
+)
 
-DTM = RAW / "hirise_dtm" / "JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif"
-WAYPOINTS = RAW / "perseverance" / "M20_waypoints.json"
-ISIS_NULL_THRESHOLD = -1e30  # ISIS special pixels are ~-3.4e38
+
+def check_crs(crs) -> bool:
+    """True when the CRS is equirectangular on a sphere of radius R (C1)."""
+    from pyproj import CRS
+
+    c = CRS.from_wkt(crs.to_wkt())
+    ell = c.ellipsoid
+    sphere = ell is not None and abs(ell.semi_major_metre - MARS_RADIUS_M) < 1.0 and (
+        ell.semi_minor_metre is None or abs(ell.semi_minor_metre - MARS_RADIUS_M) < 1.0
+    )
+    method = (c.coordinate_operation.method_name if c.coordinate_operation else "").lower()
+    return bool(sphere and ("equirectangular" in method or "equidistant cylindrical" in method))
 
 
-def main() -> None:
-    report: dict = {}
-    with rasterio.open(DTM) as ds:
-        crs = ds.crs.to_wkt()
-        report["dtm_crs_ok"] = ("3396190" in crs) and ("Equidistant Cylindrical" in crs or "Equirectangular" in crs)
-        report["dtm_res_m"] = ds.res
-        b = ds.bounds
-        report["dtm_bounds_deg"] = [np.degrees(v / MARS_RADIUS_M) for v in (b.left, b.bottom, b.right, b.top)]
+def main() -> int:
+    import rasterio
+    from rasterio.windows import from_bounds
 
-        x0, y0 = deg_to_proj(AOI["lon_min"], AOI["lat_min"])
-        x1, y1 = deg_to_proj(AOI["lon_max"], AOI["lat_max"])
-        report["aoi_inside_dtm"] = bool(b.left <= x0 and x1 <= b.right and b.bottom <= y0 and y1 <= b.top)
+    if not DTM_PATH.exists():
+        warn(f"DTM missing: {DTM_PATH.relative_to(ROOT)} (run scripts/download_data.py)")
+        return 1
+    waypoints = read_json(PERSEVERANCE_DIR / "M20_waypoints.json")["features"]
 
-        # NoData fraction in AOI (decimated read for speed).
-        win = rasterio.windows.from_bounds(x0, y0, x1, y1, ds.transform)
-        arr = ds.read(1, window=win, out_shape=(int(win.height // 10), int(win.width // 10)))
-        report["aoi_nodata_fraction"] = float((arr < ISIS_NULL_THRESHOLD).mean())
-        report["aoi_elevation_range_m"] = [float(arr[arr > ISIS_NULL_THRESHOLD].min()),
-                                           float(arr[arr > ISIS_NULL_THRESHOLD].max())]
+    with rasterio.open(DTM_PATH) as src:
+        crs_ok = check_crs(src.crs)
+        res_m = float(abs(src.transform.a))
+        b = src.bounds
+        lon_w, lat_s = proj_to_deg(b.left, b.bottom)
+        lon_e, lat_n = proj_to_deg(b.right, b.top)
+        x_w, y_s, x_e, y_n = grid_bounds_proj()
+        ax_w, ay_s = deg_to_proj(AOI["lon_w"], AOI["lat_s"])
+        ax_e, ay_n = deg_to_proj(AOI["lon_e"], AOI["lat_n"])
+        aoi_inside = bool(b.left <= ax_w and ax_e <= b.right and b.bottom <= ay_s and ay_n <= b.top)
 
-        # Rover waypoints vs DTM.
-        feats = json.loads(WAYPOINTS.read_text())["features"]
-        pts = [(f["properties"]["lon"], f["properties"]["lat"], f["properties"]["elev_geoid"]) for f in feats]
-        xy = [deg_to_proj(lon, lat) for lon, lat, _ in pts]
-        inside_dtm = [b.left <= x <= b.right and b.bottom <= y <= b.top for x, y in xy]
-        inside_aoi = [AOI["lon_min"] <= lon <= AOI["lon_max"] and AOI["lat_min"] <= lat <= AOI["lat_max"]
-                      for lon, lat, _ in pts]
-        report["waypoints_total"] = len(pts)
-        report["waypoints_inside_dtm"] = int(sum(inside_dtm))
-        report["waypoints_inside_aoi"] = int(sum(inside_aoi))
+        win = from_bounds(x_w, y_s, x_e, y_n, transform=src.transform).round_offsets().round_lengths()
+        aoi = src.read(1, window=win, masked=True).astype(np.float64)
+        valid = ~np.ma.getmaskarray(aoi) & np.isfinite(aoi.filled(np.nan)) & (aoi.filled(np.nan) > -1e30)
+        nodata_fraction = float(1.0 - valid.mean())
+        vals = aoi.filled(np.nan)[valid]
+        elev_range = [round(float(vals.min()), 2), round(float(vals.max()), 2)] if vals.size else [None, None]
 
-        sample_xy = [p for p, ok in zip(xy, inside_dtm) if ok]
-        rover_z = np.array([p[2] for p, ok in zip(pts, inside_dtm) if ok])
-        dtm_z = np.array([v[0] for v in ds.sample(sample_xy)])
-        valid = dtm_z > ISIS_NULL_THRESHOLD
-        diff = dtm_z[valid] - rover_z[valid]
-        report["elev_check_n"] = int(valid.sum())
-        report["elev_diff_dtm_minus_rover_m"] = {
-            "median": float(np.median(diff)),
-            "mean": float(diff.mean()),
-            "p05": float(np.percentile(diff, 5)),
-            "p95": float(np.percentile(diff, 95)),
-            "abs_median": float(np.median(np.abs(diff))),
-        }
+        lons = np.array([f["properties"]["lon"] for f in waypoints], dtype=float)
+        lats = np.array([f["properties"]["lat"] for f in waypoints], dtype=float)
+        elev_rover = np.array([f["properties"].get("elev_geoid", np.nan) for f in waypoints], dtype=float)
+        xs, ys = deg_to_proj(lons, lats)
+        inside_dtm = (xs >= b.left) & (xs < b.right) & (ys > b.bottom) & (ys <= b.top)
+        inside_aoi = np.array([in_aoi(lo, la) for lo, la in zip(lons, lats)])
 
-    METADATA.mkdir(parents=True, exist_ok=True)
-    out = METADATA / "validation_report.json"
-    out.write_text(json.dumps(report, indent=2))
-    print(json.dumps(report, indent=2))
-    print(f"-> {out}")
+        dtm_at = np.full(len(waypoints), np.nan)
+        idx = np.nonzero(inside_dtm)[0]
+        if idx.size:
+            sampled = np.array([v[0] for v in src.sample(zip(xs[idx], ys[idx]))], dtype=float)
+            sampled[(sampled < -1e30) | (sampled == src.nodata)] = np.nan
+            dtm_at[idx] = sampled
+        diff = dtm_at - elev_rover
+        ok = np.isfinite(diff) & (elev_rover > -9000)
+        d = diff[ok]
+
+    report = {
+        "dtm_crs_ok": crs_ok,
+        "dtm_res_m": res_m,
+        "dtm_bounds_deg": [round(float(v), 6) for v in (lon_w, lat_s, lon_e, lat_n)],
+        "aoi_inside_dtm": aoi_inside,
+        "aoi_nodata_fraction": round(nodata_fraction, 6),
+        "aoi_elevation_range_m": elev_range,
+        "waypoints_total": int(len(waypoints)),
+        "waypoints_inside_dtm": int(inside_dtm.sum()),
+        "waypoints_inside_aoi": int(inside_aoi.sum()),
+        "elev_check_n": int(d.size),
+        "elev_diff_dtm_minus_rover_m": {
+            "mean": round(float(d.mean()), 3) if d.size else None,
+            "median": round(float(np.median(d)), 3) if d.size else None,
+            "std": round(float(d.std()), 3) if d.size else None,
+            "abs_p95": round(float(np.percentile(np.abs(d), 95)), 3) if d.size else None,
+        },
+    }
+    write_json(METADATA / "validation_report.json", report)
+    info(f"wrote {(METADATA / 'validation_report.json').relative_to(ROOT)}")
+    if not crs_ok:
+        warn("DTM CRS is not the Mars 2000 sphere equirectangular (C1)")
+    if not aoi_inside:
+        warn("AOI is not fully inside the DTM")
+    return 0 if (crs_ok and aoi_inside) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

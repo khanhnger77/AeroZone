@@ -1,17 +1,20 @@
-[workspace]
-authors = ["TuniTrinh <tuan.trinh.m@ctuav.global>"]
-channels = ['conda-forge']
-name = "mars"
-platforms = ['osx-arm64']
-version = "0.1.0"
+# MARS ODYSSEY: one reproducible environment for the whole repo (contract C9).
+#
+# Quick start:
+#   1. install pixi           https://pixi.sh  (curl -fsSL https://pixi.sh/install.sh | bash)
+#   2. git clone <repo-url> Mars_Demo
+#   3. cd Mars_Demo
+#   4. pixi run demo          downloads data, builds the web app, starts everything on :4173
+#
+# Optional: `pixi run share` (public Cloudflare link), `pixi run data-env` (geology, climate,
+# space weather; needs `pixi run data` first).
 
-[tasks]
-data = "python scripts/download_data.py && python scripts/validate_data.py && python scripts/process_terrain.py && python scripts/generate_hazard.py && python scripts/render_layers.py && python scripts/build_science_targets.py"
-backend = "uvicorn backend.main:app --port 8000 --reload --reload-dir backend"
-frontend = { cmd = "npm install && npx vite --port 5173", cwd = "frontend" }
-test-api = { cmd = "python -m pytest -q tests", env = { PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1" } }
-test-web = { cmd = "npx tsc -b && npm run lint && npm test && npm run build", cwd = "frontend" }
-test = { depends-on = ["test-api", "test-web"] }
+[workspace]
+name = "mars-odyssey"
+version = "1.1.0"
+description = "MARS ODYSSEY: Jezero route planner, 3D rover simulation and NASA data pipeline"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
 
 [dependencies]
 python = "3.11.*"
@@ -30,6 +33,44 @@ uvicorn = "*"
 httpx = "*"
 pytest = "*"
 nodejs = "20.*"
-pybullet = ">=3.25,<4"
-aiohttp = ">=3.14.5,<4"
-pyyaml = ">=6.0.3,<7"
+pybullet = "*"
+aiohttp = "*"
+pyyaml = "*"
+
+[tasks]
+demo = "python -m sim.tools.run_demo"
+share = "python -m sim.tools.run_demo --share"
+data = { depends-on = [
+  "data-download",
+  "data-validate",
+  "data-process",
+  "data-hazard",
+  "data-render",
+  "data-science",
+] }
+data-download = "python scripts/download_data.py"
+data-validate = { cmd = "python scripts/validate_data.py", depends-on = ["data-download"] }
+data-process = { cmd = "python scripts/process_terrain.py", depends-on = ["data-validate"] }
+data-hazard = { cmd = "python scripts/generate_hazard.py", depends-on = ["data-process"] }
+data-render = { cmd = "python scripts/render_layers.py", depends-on = ["data-hazard"] }
+data-science = { cmd = "python scripts/build_science_targets.py", depends-on = ["data-render"] }
+# [v1.1, PROPOSED C9-ext] environment & geology track; run `pixi run data` first.
+data-env = { depends-on = [
+  "env-download",
+  "env-geology",
+  "env-hazard",
+  "env-render",
+  "env-climate",
+  "env-space-weather",
+] }
+env-download = "python scripts/download_env_data.py"
+env-geology = { cmd = "python scripts/process_geology.py", depends-on = ["env-download"] }
+env-hazard = { cmd = "python scripts/generate_hazard.py", depends-on = ["env-geology"] }
+env-render = { cmd = "python scripts/render_layers.py", depends-on = ["env-hazard"] }
+env-climate = { cmd = "python scripts/build_climate.py", depends-on = ["env-render"] }
+env-space-weather = { cmd = "python scripts/fetch_space_weather.py", depends-on = ["env-climate"] }
+backend = "uvicorn backend.main:app --port 8000 --reload --reload-dir backend"
+sim = "python -m sim.server.sim_server"
+frontend = { cmd = "npm install && npx vite --port 5173", cwd = "frontend" }
+fetch-assets = "python -m sim.tools.fetch_assets"
+test = "python -m pytest -q sim/tests sim/obstacle_avoid/tests tests"

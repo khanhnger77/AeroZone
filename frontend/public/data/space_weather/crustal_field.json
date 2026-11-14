@@ -1,0 +1,41 @@
+{
+  "category": "model",
+  "source": "https://zenodo.org/records/3876714",
+  "model": "Langlais et al. 2019 (MGS + MAVEN), spherical harmonics to degree 134",
+  "altitude_km": 0.0,
+  "aoi_b_nT": {
+    "min": 83.91,
+    "mean": 86.32,
+    "max": 88.61
+  },
+  "by_altitude": [
+    {
+      "altitude_km": 0.0,
+      "aoi_b_nT": {
+        "min": 83.91,
+        "mean": 86.32,
+        "max": 88.61
+      }
+    },
+    {
+      "altitude_km": 200.0,
+      "aoi_b_nT": {
+        "min": 5.34,
+        "mean": 5.5,
+        "max": 5.67
+      }
+    }
+  ],
+  "global_png": "data/layers/crustal_field_global.png",
+  "global_bounds": [
+    [
+      -90,
+      -180
+    ],
+    [
+      90,
+      180
+    ]
+  ],
+  "global_max_nT": 10682.1
+}

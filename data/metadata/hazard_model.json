@@ -1,5 +1,5 @@
 {
-  "formula": "0.4*Slope + 0.3*Roughness + 0.2*Obstacle + 0.1*Crater (0-100 each)",
+  "formula": "Hazard = (0.4*SlopeRisk + 0.3*RoughnessRisk) / 0.7  [full model: 0.4*SlopeRisk + 0.3*RoughnessRisk + 0.2*Obstacle + 0.1*Crater; renormalised over the available weight]",
   "weights": {
     "slope": 0.4,
     "roughness": 0.3,
@@ -44,7 +44,7 @@
       100
     ]
   ],
-  "no_go_slope_deg": 30.0,
+  "no_go_slope_deg": 30,
   "classes": [
     {
       "min": 0,
@@ -73,12 +73,23 @@
     }
   ],
   "class_fraction": {
-    "Low": 0.6591529243723379,
-    "Moderate": 0.24309812559155763,
-    "Elevated": 0.08135410308804147,
-    "High": 0.014498603539871625,
-    "Severe": 0.0018962434081914177
+    "Low": 0.659196,
+    "Moderate": 0.243129,
+    "Elevated": 0.08132,
+    "High": 0.014462,
+    "Severe": 0.001893
   },
-  "no_go_fraction": 0.0023604110187897096,
-  "disclaimer": "Prototype weights and thresholds. Not a NASA-certified safety assessment. A low score does not mean a location is safe for human exploration."
+  "no_go_fraction": 0.00236,
+  "disclaimer": "Prototype hazard index for route-planning demonstrations only. It is derived from orbital topography with heuristic weights and has not been validated against rover traversability data. It is not a mission-planning product.",
+  "factor_quality": {
+    "slope": "derived_dtm",
+    "roughness": "derived_dtm",
+    "obstacle": "unavailable",
+    "crater": "unavailable"
+  },
+  "factor_sources": {
+    "slope": "HiRISE DTM 1 m (USGS), slope on the 5 m mean surface",
+    "roughness": "HiRISE DTM 1 m (USGS), RMS residual about the 9 x 9 m moving mean"
+  },
+  "partial_factor_fraction": 0.0
 }

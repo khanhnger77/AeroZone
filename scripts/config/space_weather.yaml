@@ -1,0 +1,18 @@
+# [v1.1] fetch_space_weather.py
+donki:
+  base: https://ccmc.gsfc.nasa.gov/DONKI-API/get/
+  window_years: 3            # last N Earth years, ending today
+  chunk_days: 59             # the API rejects ranges > 60 days
+  types: [CME, SEP, FLR, IPS, WSAEnlilSimulations]
+  flr_min_class: X           # keep flares of this class or stronger (B < C < M < X)
+  timeout_s: 30
+  disclaimer: "Mars has no global magnetosphere; 'storms' = SEP/CME impacts, auroras"
+
+crustal_field:
+  model: "Langlais et al. 2019 (MGS + MAVEN), spherical harmonics to degree 134"
+  reference_radius_km: 3393.5
+  altitudes_km: [0, 200]
+  global_altitude_km: 0      # the PNG is rendered at this altitude
+  global_step_deg: 1.0
+  png_max_nT: 1000           # |B| colour ramp saturates here
+  colors: ["#0b132b", "#1c2541", "#3a506b", "#5bc0be", "#f4d35e", "#ee6c4d"]

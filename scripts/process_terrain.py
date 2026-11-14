@@ -1,111 +1,178 @@
-"""Terrain products from the HiRISE 1 m DTM over the AOI.
+"""Derive the four C2 terrain rasters (elevation, slope, roughness, hillshade) on the 5 m grid.
 
-Outputs (GeoTIFF, source CRS, NaN = NoData) in data/processed/:
-  elevation_5m.tif   mean of 1 m posts in each 5 m cell              [m above MOLA areoid]
-  slope_5m.tif       slope from 5 m grid, central differences (10 m) [degrees]
-  roughness_5m.tif   RMS of 1 m detrended relief in each 5 m cell    [m]
-  hillshade_5m.tif   analytical hillshade (az 315, alt 35)           [0-255]
-
-Method notes
-  * The CRS is equirectangular with standard parallel 0 deg, so a 1 m "projected" step in x
-    is only cos(lat) m on the ground at Jezero (~0.949). Slope uses a row-wise corrected dx.
-  * Roughness: z - mean(z over 9x9 m) at 1 m removes regional slope, leaving metre-scale relief
-    (blocks, ridges, ripples). RMS over each 5 m cell. HiRISE DTM vertical precision is
-    ~0.1-0.3 m, so values below ~0.2 m are at the noise floor.
+Why 5 m: the 1 m DTM is too heavy for an interactive planner and for web overlays, while 5 m still
+resolves rover-scale slopes. The 5 m grid is aligned to whole DTM pixels, so elevation is an exact
+mean of 5 x 5 posts (no resampling kernel). Roughness keeps the sub-cell information the mean
+throws away: the RMS residual of the 1 m surface about its 9 x 9 m moving mean. Slope uses
+central differences with a per-row cos(lat)-corrected east-west spacing, because one projected
+metre east-west is only cos(lat) ground metres on the equirectangular grid (C1).
 """
 from __future__ import annotations
 
-import json
+import sys
+import warnings
+from pathlib import Path
 
 import numpy as np
-import rasterio
-from rasterio.windows import from_bounds
-from scipy import ndimage
+from scipy.ndimage import uniform_filter
 
-from config import AOI, ANALYSIS_RES_M, METADATA, PROCESSED, RAW, deg_to_proj
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import (  # noqa: E402
+    ANALYSIS_RES_M,
+    DTM_PATH,
+    GRID_HEIGHT,
+    GRID_WIDTH,
+    GRID_X0,
+    GRID_Y0,
+    METADATA,
+    PROCESSED,
+    ROOT,
+    grid_cell_centres,
+    info,
+    proj_to_deg,
+    warn,
+    write_grid_tif,
+    write_json,
+)
 
-DTM = RAW / "hirise_dtm" / "JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif"
-NULL = -1e30
+BLOCK = int(ANALYSIS_RES_M)  # 1 m posts per 5 m cell edge
+ROUGH_WIN = 9                # 9 x 9 m moving mean
+HALO = ROUGH_WIN // 2
 
 
-def block_reduce(a: np.ndarray, f: int, fn=np.nanmean) -> np.ndarray:
-    h, w = (a.shape[0] // f) * f, (a.shape[1] // f) * f
-    return fn(a[:h, :w].reshape(h // f, f, w // f, f), axis=(1, 3))
+def read_aoi_1m(dtm_path: Path = DTM_PATH, halo: int = HALO) -> np.ndarray:
+    """Read the C2 grid footprint (plus `halo` posts each side) from the 1 m DTM, NaN NoData."""
+    import rasterio
+    from rasterio.windows import Window
+
+    with rasterio.open(dtm_path) as src:
+        res = abs(src.transform.a)
+        if abs(res - 1.0) > 1e-9:
+            raise ValueError(f"expected a 1 m DTM, got {res} m")
+        col0 = (GRID_X0 - src.transform.c) / res
+        row0 = (src.transform.f - GRID_Y0) / res
+        if abs(col0 - round(col0)) > 1e-6 or abs(row0 - round(row0)) > 1e-6:
+            raise ValueError("C2 grid is not aligned to whole DTM posts")
+        win = Window(int(round(col0)) - halo, int(round(row0)) - halo,
+                     GRID_WIDTH * BLOCK + 2 * halo, GRID_HEIGHT * BLOCK + 2 * halo)
+        z = src.read(1, window=win, boundless=True, fill_value=np.nan).astype(np.float32)
+        nd = src.nodata
+    bad = ~np.isfinite(z) | (z < -1e30)
+    if nd is not None and np.isfinite(nd):
+        bad |= z == np.float32(nd)
+    z[bad] = np.nan
+    return z
 
 
-def write(path, arr, profile):
-    p = dict(profile, dtype="float32", count=1, nodata=np.nan, compress="deflate", tiled=True,
-             blockxsize=256, blockysize=256)
-    with rasterio.open(path, "w", **p) as dst:
-        dst.write(arr.astype("float32"), 1)
+def block_view(a: np.ndarray) -> np.ndarray:
+    """(H*5, W*5) -> (H, W, 25) view of 5 x 5 blocks."""
+    h, w = a.shape[0] // BLOCK, a.shape[1] // BLOCK
+    return a[: h * BLOCK, : w * BLOCK].reshape(h, BLOCK, w, BLOCK).swapaxes(1, 2).reshape(h, w, BLOCK * BLOCK)
 
 
-def main() -> None:
-    PROCESSED.mkdir(parents=True, exist_ok=True)
-    f = int(ANALYSIS_RES_M)
-    x0, y0 = deg_to_proj(AOI["lon_min"], AOI["lat_min"])
-    x1, y1 = deg_to_proj(AOI["lon_max"], AOI["lat_max"])
+def nan_moving_mean(z: np.ndarray, size: int) -> np.ndarray:
+    """Moving mean that ignores NaN (normalised convolution)."""
+    valid = np.isfinite(z).astype(np.float32)
+    s = uniform_filter(np.where(valid > 0, z, 0.0).astype(np.float32), size=size, mode="nearest")
+    n = uniform_filter(valid, size=size, mode="nearest")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = s / n
+    out[n < 1e-6] = np.nan
+    return out
 
-    with rasterio.open(DTM) as ds:
-        win = from_bounds(x0, y0, x1, y1, ds.transform).round_offsets().round_lengths()
-        # snap window size to multiples of the aggregation factor
-        win = rasterio.windows.Window(win.col_off, win.row_off, (win.width // f) * f, (win.height // f) * f)
-        print(f"reading window {win} ...")
-        z = ds.read(1, window=win).astype("float32")
-        tr = ds.window_transform(win)
-        crs = ds.crs
 
-    z[z < NULL] = np.nan
-    print(f"1 m grid {z.shape}, NaN fraction {np.isnan(z).mean():.4f}")
+def compute(z1: np.ndarray, halo: int = HALO) -> dict[str, np.ndarray]:
+    """All four rasters from the padded 1 m read."""
+    core = z1[halo: z1.shape[0] - halo, halo: z1.shape[1] - halo]
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        elev = np.nanmean(block_view(core), axis=2).astype(np.float32)
 
-    # --- roughness at 1 m, then aggregate -------------------------------------------------
-    zf = np.where(np.isnan(z), np.nanmean(z), z)
-    resid = zf - ndimage.uniform_filter(zf, size=9, mode="nearest")
-    resid[np.isnan(z)] = np.nan
-    rough = np.sqrt(block_reduce(resid ** 2, f))
-    del resid, zf
+        resid = z1 - nan_moving_mean(z1, ROUGH_WIN)
+        resid_core = resid[halo: z1.shape[0] - halo, halo: z1.shape[1] - halo]
+        rough = np.sqrt(np.nanmean(block_view(resid_core) ** 2, axis=2)).astype(np.float32)
+    rough[np.isnan(elev)] = np.nan
 
-    # --- 5 m elevation ---------------------------------------------------------------------
-    elev = block_reduce(z, f)
-    del z
-    tr5 = tr * rasterio.Affine.scale(f)
-    profile = {"driver": "GTiff", "height": elev.shape[0], "width": elev.shape[1], "crs": crs, "transform": tr5}
+    slope, aspect_dx, aspect_dy = slope_deg(elev)
+    hill = hillshade(aspect_dx, aspect_dy)
+    hill[np.isnan(elev)] = np.nan
+    return {"elevation": elev, "slope": slope, "roughness": rough, "hillshade": hill}
 
-    # --- slope with latitude-corrected dx ----------------------------------------------------
-    rows = np.arange(elev.shape[0])
-    lat_rows = np.degrees((tr5.f + (rows + 0.5) * tr5.e) / 3_396_190.0)
-    dx = ANALYSIS_RES_M * np.cos(np.radians(lat_rows))[:, None]
-    dzdy, dzdx = np.gradient(elev, ANALYSIS_RES_M, axis=0), np.gradient(elev, axis=1) / dx
-    slope = np.degrees(np.arctan(np.hypot(dzdx, dzdy)))
 
-    # --- hillshade -------------------------------------------------------------------------
-    az, alt = np.radians(315), np.radians(35)
-    aspect = np.arctan2(-dzdx, dzdy)  # dzdy uses row order (north->south); sign handled below
-    s = np.radians(slope)
-    hs = np.sin(alt) * np.cos(s) + np.cos(alt) * np.sin(s) * np.cos(az - aspect)
-    hill = np.clip(hs, 0, 1) * 255
+def _gradients(elev: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """dz/dx_east and dz/dy_north in ground metres (rows run north -> south)."""
+    _, ys = grid_cell_centres()
+    _, lat = proj_to_deg(0.0, ys)
+    dx_ground = ANALYSIS_RES_M * np.cos(np.radians(lat))[:, None]
+    dz_dcol = np.gradient(elev, axis=1)          # per column step
+    dz_drow = np.gradient(elev, axis=0)          # per row step (southward)
+    return dz_dcol / dx_ground, -dz_drow / ANALYSIS_RES_M
 
-    for name, arr in [("elevation_5m", elev), ("slope_5m", slope), ("roughness_5m", rough), ("hillshade_5m", hill)]:
-        write(PROCESSED / f"{name}.tif", arr, profile)
-        print(f"wrote {name}.tif")
 
-    def stats(a):
-        v = a[np.isfinite(a)]
-        return {k: float(fn(v)) for k, fn in
-                [("min", np.min), ("p05", lambda x: np.percentile(x, 5)), ("median", np.median),
-                 ("mean", np.mean), ("p95", lambda x: np.percentile(x, 95)), ("max", np.max)]}
+def slope_deg(elev: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    gx, gy = _gradients(elev)
+    slope = np.degrees(np.arctan(np.hypot(gx, gy))).astype(np.float32)
+    return slope, gx, gy
 
-    meta = {
-        "grid": {"res_m": ANALYSIS_RES_M, "shape": list(elev.shape), "crs_wkt": crs.to_wkt(),
-                 "transform": list(tr5)[:6]},
-        "elevation_m": stats(elev), "slope_deg": stats(slope), "roughness_m": stats(rough),
-        "slope_fraction": {
-            "lt_5": float((slope < 5).mean()), "5_15": float(((slope >= 5) & (slope < 15)).mean()),
-            "15_25": float(((slope >= 15) & (slope < 25)).mean()), "ge_25": float((slope >= 25).mean())},
+
+def hillshade(gx: np.ndarray, gy: np.ndarray, azimuth_deg: float = 315.0, altitude_deg: float = 35.0) -> np.ndarray:
+    """Lambertian hillshade 0-255 (illumination from azimuth, measured clockwise from north)."""
+    az = np.radians(azimuth_deg)
+    alt = np.radians(altitude_deg)
+    # surface normal n = (-gx, -gy, 1)/|.| ; sun vector s = (sin az cos alt, cos az cos alt, sin alt)
+    norm = np.sqrt(gx * gx + gy * gy + 1.0)
+    shade = (-gx * np.sin(az) * np.cos(alt) - gy * np.cos(az) * np.cos(alt) + np.sin(alt)) / norm
+    return (255.0 * np.clip(shade, 0.0, 1.0)).astype(np.float32)
+
+
+def _stats(a: np.ndarray, nd: int = 3) -> dict[str, float]:
+    v = a[np.isfinite(a)]
+    if not v.size:
+        return {}
+    p = np.percentile(v, [5, 50, 95])
+    return {
+        "min": round(float(v.min()), nd), "p05": round(float(p[0]), nd), "median": round(float(p[1]), nd),
+        "mean": round(float(v.mean()), nd), "p95": round(float(p[2]), nd), "max": round(float(v.max()), nd),
     }
-    (METADATA / "terrain_stats.json").write_text(json.dumps(meta, indent=2))
-    print(json.dumps({k: meta[k] for k in ("elevation_m", "slope_deg", "roughness_m", "slope_fraction")}, indent=1))
+
+
+def slope_fraction(slope: np.ndarray) -> dict[str, float]:
+    v = slope[np.isfinite(slope)]
+    edges = [(0, 5), (5, 15), (15, 25), (25, 30), (30, 90)]
+    out = {}
+    for lo, hi in edges:
+        key = f"{lo}-{hi}" if hi < 90 else f">={lo}"
+        out[key] = round(float(((v >= lo) & (v < hi)).mean()), 6) if v.size else 0.0
+    return out
+
+
+def main() -> int:
+    if not DTM_PATH.exists():
+        warn(f"DTM missing: {DTM_PATH.relative_to(ROOT)} (run scripts/download_data.py)")
+        return 1
+    info("reading the AOI from the 1 m DTM ...")
+    z1 = read_aoi_1m()
+    out = compute(z1)
+    for name, arr in out.items():
+        path = PROCESSED / f"{name}_5m.tif"
+        write_grid_tif(path, arr)
+        info(f"wrote {path.relative_to(ROOT)}")
+    stats = {
+        "grid": {
+            "width": GRID_WIDTH, "height": GRID_HEIGHT, "res_m": ANALYSIS_RES_M,
+            "transform": [ANALYSIS_RES_M, 0.0, GRID_X0, 0.0, -ANALYSIS_RES_M, GRID_Y0],
+            "crs": "Mars 2000 sphere equirectangular (ESRI:103885)",
+            "valid_fraction": round(float(np.isfinite(out["elevation"]).mean()), 6),
+        },
+        "elevation_m": _stats(out["elevation"], 2),
+        "slope_deg": _stats(out["slope"], 2),
+        "roughness_m": _stats(out["roughness"], 4),
+        "slope_fraction": slope_fraction(out["slope"]),
+    }
+    write_json(METADATA / "terrain_stats.json", stats)
+    info(f"wrote {(METADATA / 'terrain_stats.json').relative_to(ROOT)}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

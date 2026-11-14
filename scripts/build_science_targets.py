@@ -1,23 +1,26 @@
-"""Vector layers: Perseverance traverse, waypoints and sample sites (Module B inputs).
+"""Snapshot the rover track and place the 25 NASA rock samples on it (C3 vector files).
 
-Sample list: NASA Mars 2020 "Mars Rock Samples" page (sample no., name, feature, type, sol
-sealed). Sample LOCATIONS are derived here: the rover's last localized position on or before
-the sealing sol (from the JPL MMGIS waypoint file). This is an approximation - the rover may
-have moved between coring and sealing, and waypoints are end-of-drive fixes. Uncertainty is
-reported per site as the sol gap.
+Why the samples are placed this way: NASA publishes the sample list (name, feature, sol sealed) but
+not coordinates. The rover's position when it sealed a tube is best approximated by the last MMGIS
+localised waypoint on or before the sealing sol; `location_sol_gap` records how many sols separate
+the two, which is an honest uncertainty indicator (0 = fix from that very sol).
 
-Outputs: frontend/public/data/{traverse,waypoints,samples}.geojson
+Writes frontend/public/data/{traverse,waypoints,samples}.geojson as compact JSON.
 """
 from __future__ import annotations
 
-import bisect
-import json
+import sys
+from pathlib import Path
+from typing import Any
 
-from config import AOI, RAW, WEB
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import PERSEVERANCE_DIR, ROOT, WEB, in_aoi, info, read_json, warn, write_json  # noqa: E402
 
-SAMPLES_SRC = "https://science.nasa.gov/mission/mars-2020-perseverance/mars-rock-samples"
-# (no, sample name, feature/target name, type, sol sealed, rock class from NASA page)
-SAMPLES = [
+SAMPLES_URL = "https://science.nasa.gov/mission/mars-2020-perseverance/mars-rock-samples"
+LOCATION_METHOD = "last rover fix on/before sealing sol"
+
+# (sample no., name, feature, type, sol sealed, rock class) from the NASA Mars Rock Samples page.
+SAMPLES: list[tuple[int, str, str, str, int, str]] = [
     (1, "Roubion", "Roubion", "Atmospheric", 164, "n/a (no rock retained)"),
     (2, "Montdenier", "Rochette", "Rock core", 194, "Igneous"),
     (3, "Montagnac", "Rochette", "Rock core", 196, "Igneous"),
@@ -45,51 +48,87 @@ SAMPLES = [
     (25, "Sapphire Canyon", "Cheyava Falls", "Rock core", 1215, "Sedimentary (Bright Angel fm.)"),
 ]
 
-
-def in_aoi(lon, lat):
-    return AOI["lon_min"] <= lon <= AOI["lon_max"] and AOI["lat_min"] <= lat <= AOI["lat_max"]
+WAYPOINT_KEYS = ("sol", "site", "drive", "lon", "lat", "elev_geoid", "dist_total_m", "Note")
 
 
-def main() -> None:
-    wp = json.loads((RAW / "perseverance" / "M20_waypoints.json").read_text())["features"]
-    wp.sort(key=lambda f: f["properties"]["sol"])
-    sols = [f["properties"]["sol"] for f in wp]
+def fc(features: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"type": "FeatureCollection", "features": features}
 
-    keep = ("sol", "site", "drive", "lon", "lat", "elev_geoid", "dist_total_m", "Note")
-    waypoints = {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": f["geometry"] if f.get("geometry") else
-         {"type": "Point", "coordinates": [f["properties"]["lon"], f["properties"]["lat"]]},
-         "properties": {k: f["properties"].get(k) for k in keep}} for f in wp]}
-    for f in waypoints["features"]:
-        f["geometry"]["coordinates"] = f["geometry"]["coordinates"][:2]
 
-    tr = json.loads((RAW / "perseverance" / "M20_traverse.json").read_text())
-    for f in tr["features"]:
-        f["geometry"]["coordinates"] = [c[:2] for c in f["geometry"]["coordinates"]]
-        f["properties"] = {"sol": f["properties"].get("sol"), "length_m": f["properties"].get("length")}
-    tr.pop("crs", None)
+def point(lon: float, lat: float, props: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(lon, 8), round(lat, 8)]},
+            "properties": props}
 
-    samples = []
+
+def build_traverse(raw: dict[str, Any]) -> dict[str, Any]:
+    out = []
+    for f in raw["features"]:
+        coords = [[round(c[0], 7), round(c[1], 7)] for c in f["geometry"]["coordinates"]]
+        dedup = [c for i, c in enumerate(coords) if i == 0 or c != coords[i - 1]]
+        if len(dedup) < 2:
+            dedup = coords[:2] if len(coords) >= 2 else coords * 2
+        p = f["properties"]
+        out.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": dedup},
+                    "properties": {"sol": int(p["sol"]), "length_m": float(p.get("length", 0.0))}})
+    return fc(out)
+
+
+def build_waypoints(raw: dict[str, Any], meda: dict[int, dict[str, float]]) -> dict[str, Any]:
+    out = []
+    for f in raw["features"]:
+        p = f["properties"]
+        props = {k: p.get(k) for k in WAYPOINT_KEYS}
+        if int(p["sol"]) in meda:
+            props["meda"] = meda[int(p["sol"])]
+        out.append(point(float(p["lon"]), float(p["lat"]), props))
+    return fc(out)
+
+
+def build_samples(raw: dict[str, Any]) -> dict[str, Any]:
+    wps = sorted((f["properties"] for f in raw["features"]), key=lambda p: (p["sol"], p.get("site", 0), p.get("drive", 0)))
+    out = []
     for no, name, feature, typ, sol, rock in SAMPLES:
-        i = bisect.bisect_right(sols, sol) - 1
-        p = wp[i]["properties"]
-        samples.append({"type": "Feature",
-                        "geometry": {"type": "Point", "coordinates": [p["lon"], p["lat"]]},
-                        "properties": {
-                            "sample_no": no, "name": name, "feature": feature, "type": typ,
-                            "sol_sealed": sol, "rock_class": rock,
-                            "location_method": "Rover waypoint on/before sealing sol (JPL MMGIS)",
-                            "location_sol": p["sol"], "location_sol_gap": sol - p["sol"],
-                            "elev_m": p["elev_geoid"], "in_aoi": in_aoi(p["lon"], p["lat"]),
-                            "source": SAMPLES_SRC}})
+        before = [p for p in wps if p["sol"] <= sol]
+        if not before:
+            warn(f"sample {no} {name}: no waypoint on/before sol {sol}")
+            continue
+        w = before[-1]
+        lon, lat = float(w["lon"]), float(w["lat"])
+        out.append(point(lon, lat, {
+            "sample_no": no, "name": name, "feature": feature, "type": typ, "sol_sealed": sol,
+            "rock_class": rock, "location_method": LOCATION_METHOD, "location_sol": int(w["sol"]),
+            "location_sol_gap": int(sol - w["sol"]), "elev_m": float(w["elev_geoid"]),
+            "in_aoi": in_aoi(lon, lat), "source": SAMPLES_URL,
+        }))
+    return fc(out)
 
-    WEB.mkdir(parents=True, exist_ok=True)
-    for name, fc in [("waypoints", waypoints), ("traverse", tr),
-                     ("samples", {"type": "FeatureCollection", "features": samples})]:
-        (WEB / f"{name}.geojson").write_text(json.dumps(fc, separators=(",", ":")))
-        print(f"wrote {name}.geojson ({len(fc['features'])} features)")
-    print("samples in AOI:", sum(s["properties"]["in_aoi"] for s in samples), "/", len(samples))
+
+def load_meda_summary() -> dict[int, dict[str, float]]:
+    """[v1.1] Optional per-sol MEDA summary (C10) to attach to waypoints."""
+    p = WEB / "climate" / "meda_sols.json"
+    if not p.exists():
+        return {}
+    try:
+        return {int(s["sol"]): {"t_air_mean_k": s["t_air_mean_k"], "p_mean_pa": s["p_mean_pa"]}
+                for s in read_json(p)["sols"]}
+    except (KeyError, ValueError, TypeError) as exc:
+        warn(f"ignoring malformed {p.name}: {exc}")
+        return {}
+
+
+def main() -> int:
+    wp_raw = read_json(PERSEVERANCE_DIR / "M20_waypoints.json")
+    tr_raw = read_json(PERSEVERANCE_DIR / "M20_traverse.json")
+    files = {
+        "traverse.geojson": build_traverse(tr_raw),
+        "waypoints.geojson": build_waypoints(wp_raw, load_meda_summary()),
+        "samples.geojson": build_samples(wp_raw),
+    }
+    for name, obj in files.items():
+        write_json(WEB / name, obj, compact=True)
+        info(f"wrote {(WEB / name).relative_to(ROOT)} ({len(obj['features'])} features)")
+    return 0 if len(files["samples.geojson"]["features"]) == len(SAMPLES) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

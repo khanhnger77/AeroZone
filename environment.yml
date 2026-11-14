@@ -1,3 +1,5 @@
+# Alternative to pixi (pixi.toml is the reference environment, contract C9).
+#   conda env create -f environment.yml && conda activate mars
 name: mars
 channels:
   - conda-forge
@@ -18,3 +20,6 @@ dependencies:
   - httpx
   - pytest
   - nodejs=20
+  - pybullet
+  - aiohttp
+  - pyyaml

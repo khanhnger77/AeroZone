@@ -1,0 +1,112 @@
+# [v1.1] Environment & geology sources (§6 of the M1 document). The downloader reads only this file.
+#
+# Per id:
+#   url            direct download URL (or API base for `kind: api` sources, fetched by their script)
+#   landing_page   human page / DOI
+#   licence, citation
+#   dest           path under the repo root ({sol}, {sol4}, {range} are filled for MEDA)
+#   expected_size  bytes, optional, informational
+#   manual         true = needs a request form or a human click; the downloader prints instructions
+#   large          true = skipped by --skip-large
+#   kind           file (default) | remote_window (GDAL /vsicurl/ windowed read of the AOI) |
+#                  api (queried by the processing script, nothing downloaded here) | meda (per-sol PDS files)
+#   unzip          true = extract the zip next to `dest`
+#   extract        optional glob patterns of zip members to extract (default: all)
+
+stack2020_units:
+  url: https://static-content.springer.com/esm/art%3A10.1007%2Fs11214-020-00739-x/MediaObjects/11214_2020_739_MOESM3_ESM.zip
+  landing_page: https://link.springer.com/article/10.1007/s11214-020-00739-x
+  licence: CC BY 4.0 (Space Science Reviews open access)
+  citation: "Stack, K. M. et al. (2020) Photogeologic map of the Perseverance rover field site in Jezero crater constructed by the Mars 2020 Science Team. Space Sci. Rev. 216, 127. doi:10.1007/s11214-020-00739-x"
+  dest: data/raw/geology/stack2020/11214_2020_739_MOESM3_ESM.zip
+  expected_size: 3476604
+  manual: false
+  unzip: true
+  shapefile: M2020_JEZ_geology_edited_equi0_allquads_v6_archive.shp
+
+themis_ti:
+  url: https://asc-astropedia.s3.us-west-2.amazonaws.com/Mars/Odyssey/THEMIS-Global-Thermal-Inertia-Mosaic/Quantitative-32-Bit/THEMIS_TI_Mosaic_Quant_00N060E_100mpp.cub
+  landing_page: https://astrogeology.usgs.gov/search/map/themis_thermal_inertia_mosaic_quantitative_00n060e_100mpp
+  licence: Public domain (USGS / NASA)
+  citation: "Fergason, R. L., Christensen, P. R. and Kieffer, H. H. (2006) High-resolution thermal inertia derived from THEMIS. J. Geophys. Res. 111, E12004. USGS Astrogeology THEMIS quantitative thermal inertia mosaic 00N060E, 100 m/px."
+  # Tile 00N060E spans 0-30 N, 60-120 E (verified Nov 2026). The full tile is 2.5 GB, so only the AOI
+  # window (+ margin) is read through GDAL /vsicurl/ and stored as a small GeoTIFF.
+  dest: data/raw/geology/themis_ti_aoi.tif
+  expected_size: 2532510192
+  margin_deg: 0.05
+  manual: false
+  large: true
+  kind: remote_window
+
+noah_h_jezero:
+  url: https://ndownloader.figshare.com/files/33917705
+  landing_page: https://doi.org/10.21954/ou.rd.17121482.v1
+  licence: CC BY 4.0
+  citation: "Wright, J. et al. (2022) NOAH-H terrain classifications of Jezero crater, Mars. The Open University, dataset. doi:10.21954/ou.rd.17121482.v1"
+  dest: data/raw/geology/noah_h/NOAH-H_terrain_classifications_of_Jezero_Crater_Mars.zip
+  expected_size: 352353484
+  manual: false
+  large: true
+  unzip: true
+  # the zip holds 7.8 GB of per-image 25 cm rasters; only the mosaics (~280 MB) are extracted
+  extract: ["*/NOAH-H_mosaics/*", "*/readme.txt"]
+
+robbins_craters:
+  url: https://astrogeology.usgs.gov/pygeoapi/collections/mars/robbinsv1/items
+  landing_page: https://craters.sjrdesign.net/
+  licence: Public domain (USGS OGC API) / CC BY (Robbins & Hynek 2012)
+  citation: "Robbins, S. J. and Hynek, B. M. (2012) A new global database of Mars impact craters >= 1 km. J. Geophys. Res. 117, E05004."
+  dest: data/raw/geology/robbins_aoi.json
+  manual: false
+  kind: api
+
+mcd:
+  url: https://www-mars.lmd.jussieu.fr/
+  landing_page: https://www-mars.lmd.jussieu.fr/mars/access.html
+  licence: Free for research on request (LMD / ESA / CNES)
+  citation: "Millour, E. et al. Mars Climate Database v6.1 (LMD/ESA/CNES). User manual: https://www-mars.lmd.jussieu.fr/mars/info_web/user_manual_6.1.pdf"
+  dest: data/raw/climate/mcd/
+  manual: true
+  instructions: >-
+    Export the AOI-centre column (77.38 E, 18.4625 N) at local time 14 h, Ls 0-345 step 15, for the
+    scenarios `climatology` and `dust_storm`, with surface temperature (tsurf), surface pressure (ps),
+    near-surface wind speed and dust optical depth. Save the NetCDF or the web interface's ASCII
+    export into data/raw/climate/mcd/ as mcd_<scenario>.nc or mcd_<scenario>.txt.
+
+meda:
+  url: https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/
+  landing_page: https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/PERSEVERANCE/meda.html
+  licence: Public domain (NASA PDS)
+  citation: "Rodriguez-Manfredi, J. A. et al. Mars 2020 MEDA bundle, NASA PDS Atmospheres Node, doi:10.17189/1522849."
+  pds_release: "Release 16 (2026-08-11)"
+  dest: data/raw/climate/meda/
+  manual: false
+  large: true
+  kind: meda
+
+mdad:
+  url: https://dataverse.harvard.edu/api/access/datafile/3607412
+  landing_page: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910%2FDVN%2FF8R2JX
+  licence: CC0 1.0
+  citation: "Battalio, M. and Wang, H. (2021) The Mars Dust Activity Database (MDAD): a comprehensive statistical study of dust storm sequences. Icarus 354, 114059. Harvard Dataverse doi:10.7910/DVN/F8R2JX"
+  dest: data/raw/climate/mdad/MDAD.tab
+  expected_size: 2111103
+  manual: false
+
+donki:
+  url: https://ccmc.gsfc.nasa.gov/DONKI-API/get/
+  landing_page: https://ccmc.gsfc.nasa.gov/DONKI/
+  licence: Public domain (NASA CCMC)
+  citation: "NASA CCMC Space Weather Database Of Notifications, Knowledge, Information (DONKI)."
+  dest: data/raw/space_weather/donki/
+  manual: false
+  kind: api
+
+langlais2019:
+  url: https://zenodo.org/records/3876714/files/Langlais2019.sh.gz
+  landing_page: https://zenodo.org/records/3876714
+  licence: CC BY 4.0
+  citation: "Langlais, B., Thebault, E., Houliez, A., Purucker, M. E. and Lillis, R. J. (2019) A new model of the crustal magnetic field of Mars using MGS and MAVEN. J. Geophys. Res. Planets 124, 1542-1569. doi:10.1029/2018JE005854"
+  dest: data/raw/space_weather/Langlais2019.sh.gz
+  expected_size: 84853
+  manual: false
