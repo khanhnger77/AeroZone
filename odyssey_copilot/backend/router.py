@@ -40,7 +40,7 @@ def get_openrouter_credentials() -> tuple[Optional[str], str]:
     if not key:
         for p in [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]:
             if p.exists():
-                for line in p.read_text().splitlines():
+                for line in p.read_text(encoding="utf-8").splitlines():
                     clean = line.strip()
                     if clean.startswith("OPENROUTER_API_KEY="):
                         val = clean.split("=", 1)[1].strip().strip('"').strip("'")
