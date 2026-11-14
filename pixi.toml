@@ -20,7 +20,7 @@ platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
 python = "3.11.*"
 gdal = "*"
 rasterio = "*"
-numpy = "*"
+numpy = "==2.4.6"     # pinned with pybullet/aiohttp: the sim's physics and transport (see check-env)
 scipy = "*"
 scikit-image = "*"
 geopandas = "*"
@@ -33,13 +33,15 @@ uvicorn = "*"
 httpx = "*"
 pytest = "*"
 nodejs = "20.*"
-pybullet = "*"
-aiohttp = "*"
+pybullet = "==3.25"   # exact physics binary; every platform's build is pinned in pixi.lock
+aiohttp = "==3.14.5"
 pyyaml = "*"
 
 [tasks]
 demo = "python -m sim.tools.run_demo"
 share = "python -m sim.tools.run_demo --share"
+# Exits 1 unless every installed package is the exact file (version + build) pinned in pixi.lock.
+check-env = "python -m sim.tools.check_env"
 data = { depends-on = [
   "data-download",
   "data-validate",

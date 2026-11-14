@@ -20,6 +20,23 @@ From the repo root, in the team pixi environment (`pixi.toml` belongs to M1):
 
 Then open <http://127.0.0.1:8100/sim/>.
 
+**Same environment on every machine.** `pixi.lock` pins every package to an exact file (version
+and build) for each platform; `pybullet`, `numpy` and `aiohttp` are also pinned in `pixi.toml`, so
+a re-solve cannot move the physics or transport. Always run through pixi, ideally with `--locked`
+(fails instead of silently re-solving if `pixi.toml` and `pixi.lock` disagree):
+
+```bash
+pixi install --locked
+pixi run --locked demo
+pixi run check-env        # exits 1 unless every installed package matches pixi.lock exactly
+```
+
+`pixi run demo` runs the same check first and refuses to start on any difference (a re-solved
+environment, a pip-installed pybullet, another project's environment); it prints the differing
+packages and the fix (`pixi install --locked`, or `pixi reinstall`). `--allow-env-drift` overrides it.
+The sim server also logs its pybullet build at start-up, so a bug report shows which binary it
+came from.
+
 **Inputs the server needs:**
 - `data/processed/elevation_5m.tif` from M1's data pipeline (`pixi run data`). Without it, mission
   requests return **503**.

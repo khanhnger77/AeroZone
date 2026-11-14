@@ -127,6 +127,26 @@ def http_ok(url: str, timeout: float = 3.0) -> int | None:
 
 
 # ---------------------------------------------------------------- steps
+def step_env(strict: bool = True) -> None:
+    """Refuse to start unless every installed package is the exact file pinned in pixi.lock.
+
+    The sim's physics (PyBullet) must be the same binary on every machine; a re-solved or
+    pip-installed environment can collide differently, so "works here, falls through there" is
+    stopped at the door instead of debugged later.
+    """
+    from sim.tools.check_env import check
+
+    rep = check()
+    if rep.ok:
+        say(f"env: {rep.summary()}; pybullet {rep.version_of('pybullet')}")
+        return
+    print(rep.summary(), flush=True)
+    fix = "run `pixi install --locked` (or `pixi reinstall`), then `pixi run demo`"
+    if strict:
+        die(f"environment differs from pixi.lock: {fix}; or pass --allow-env-drift to start anyway")
+    warn(f"environment differs from pixi.lock (continuing because of --allow-env-drift): {fix}")
+
+
 def step_data(env_data: bool) -> None:
     if (PROCESSED / "elevation_5m.tif").exists() and (ANALYSIS / "hazard_5m.tif").exists():
         say("data: C2 rasters present, skipping the pipeline")
@@ -473,11 +493,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--share", action="store_true", help="also open a public Cloudflare quick tunnel")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser")
     ap.add_argument("--no-env-data", action="store_true", help="skip the optional environment & geology data")
+    ap.add_argument("--allow-env-drift", action="store_true",
+                    help="start even if installed packages differ from pixi.lock (not recommended)")
     args = ap.parse_args(argv)
 
     busy = [p for p in (PORT_API, PORT_SIM, PORT_WEB) if port_busy(p)]
     if busy:
         die(f"port(s) {', '.join(map(str, busy))} already in use; stop the other process first")
+
+    step_env(strict=not args.allow_env_drift)
 
     step_data(env_data=not args.no_env_data)
     step_assets()
