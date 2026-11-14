@@ -834,9 +834,14 @@ function QuickLayers({ layers, setLayers, manifest, embedded = false }: { layers
         const on = id === 'hirise' ? !!layers.trek.hirise : !!layers.raster[id]?.on
         return (
           <button key={id} aria-pressed={on}
-            onClick={() => setLayers((s) => id === 'hirise'
-              ? { ...s, trek: { ...s.trek, hirise: !on } }
-              : { ...s, raster: { ...s.raster, [id]: { on: !on, opacity: s.raster[id]?.opacity ?? 0.7 } } })}
+            onClick={() => setLayers((s) => ({
+              ...s,
+              trek: { ...s.trek, hirise: id === 'hirise' },
+              raster: {
+                ...Object.fromEntries(Object.entries(s.raster).map(([key, layer]) => [key, { ...layer, on: false }])),
+                ...(id === 'hirise' ? {} : { [id]: { on: true, opacity: s.raster[id]?.opacity ?? 0.7 } }),
+              },
+            }))}
             className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11.5px] transition-colors ${on ? 'bg-mars/15 text-ink' : 'text-muted hover:bg-white/5 hover:text-ink'}`}>
             <i className={`h-1.5 w-1.5 rounded-full ${on ? 'bg-mars shadow-[0_0_8px_#ff6a3d]' : 'bg-line-2'}`} />{label}
           </button>
