@@ -9,7 +9,7 @@
 `odyssey_copilot` là trợ lý ảo hỗ trợ phi hành gia (EVA Co-pilot / Capcom Radio Assistant) hoạt động tại **Jezero Crater, Sao Hỏa**. Được thiết kế như một module độc lập (**decoupled & plug-and-play**), copilot có thể được tích hợp vào bất kỳ giao diện web/map nào chỉ trong vòng **15 phút**.
 
 ### Điểm nổi bật:
-* 🧠 **2-Pass Agentic Tool Loop**: Gọi LLM qua **OpenRouter** (mặc định `deepseek/deepseek-chat`, đổi bằng `OPENROUTER_MODEL`) với vòng lặp tự động gọi các công cụ địa hình & khoa học (tối đa 3 lượt).
+* 🧠 **2-Pass Agentic Tool Loop**: Gọi LLM qua **OpenRouter** (mặc định `meta-llama/llama-3.3-70b-instruct`, đổi bằng `OPENROUTER_MODEL`) với vòng lặp tự động gọi các công cụ địa hình & khoa học (tối đa 3 lượt).
 * 🛡️ **Zero-Hallucination & Telemetry Guard**: Nghiêm ngặt từ chối bịa đặt các chỉ số sinh tồn của bộ đồ EVA (áp suất, lượng oxy bình dưỡng khí, nhịp tim), hướng dẫn phi hành gia kiểm tra bảng điều khiển analog phần cứng.
 * 🛰️ **Grounding dữ liệu NASA**: Tích hợp toàn diện 25 mẫu đá lõi của xe tự hành Perseverance (bao gồm các điểm nóng sinh học cổ như *Cheyava Falls - Sample #25*) và địa hình HiRISE/MOLA.
 * ⚡ **Offline Capcom Fallback**: Hệ thống vẫn phản hồi chính xác số liệu thực địa và điều khiển bản đồ ngay cả khi mất mạng hoặc chưa cấu hình API key.
@@ -47,7 +47,7 @@ pip install fastapi uvicorn pydantic httpx
 Tạo file `.env` tại thư mục gốc của project (`Challenge/AeroZone/.env`):
 ```env
 OPENROUTER_API_KEY="sk-or-v1-..."
-OPENROUTER_MODEL="deepseek/deepseek-chat"  # tùy chọn
+OPENROUTER_MODEL="meta-llama/llama-3.3-70b-instruct"  # tùy chọn
 ```
 *(Hoặc `export OPENROUTER_API_KEY="sk-or-v1-..."` trong terminal. Không có key thì copilot dùng offline fallback.)*
 

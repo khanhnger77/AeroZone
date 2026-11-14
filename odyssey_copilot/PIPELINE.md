@@ -1,6 +1,6 @@
 # Odyssey Copilot — Pipeline Overview & Audit
 
-Kiểm tra ngày 2026-11-14. Chạy thực tế qua `POST /api/copilot/chat` (cổng 8001), LLM đang dùng: OpenRouter `deepseek/deepseek-chat`.
+Kiểm tra ngày 2026-11-14. Chạy thực tế qua `POST /api/copilot/chat` (cổng 8001), LLM đang dùng: OpenRouter `meta-llama/llama-3.3-70b-instruct`.
 
 ## 1. Pipeline
 
@@ -11,7 +11,7 @@ Client (OdysseyCopilot.tsx)
 router.chat()
    ├─ 1. Vitals guard (regex)  ── khớp → từ chối cố định, KHÔNG gọi LLM
    ├─ 2. Lấy vị trí: current_location (lon/lat hoặc x/y) → mặc định landing site 77.4509, 18.4446
-   ├─ 3. OpenRouter (OPENROUTER_API_KEY, model mặc định deepseek/deepseek-chat)
+   ├─ 3. OpenRouter (OPENROUTER_API_KEY, model mặc định meta-llama/llama-3.3-70b-instruct)
    │     Không có key hoặc lỗi → offline fallback (rule-based, keyword EN/VI)
    ├─ 4. Vòng tool tối đa 3 lượt: LLM + SYSTEM_PROMPT + 7 tool (tools luôn bật mỗi lượt),
    │     chạy mọi tool_call, kết quả gửi lại LLM để chuỗi gọi / tổng hợp

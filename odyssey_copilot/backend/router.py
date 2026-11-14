@@ -26,7 +26,7 @@ from .tools import (
     LANDMARKS_DB
 )
 
-DEFAULT_OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+DEFAULT_OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct")
 
 router = APIRouter(tags=["copilot"])
 copilot_router = router
