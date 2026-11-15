@@ -4,7 +4,7 @@
     "path": "data/raw/geology/stack2020/11214_2020_739_MOESM3_ESM.zip",
     "size": 3476604,
     "sha256": "970e4c78ae6dc689c99e46eddb4be184704a56952008d0558f643e816e29b118",
-    "retrieved_utc": "2026-11-14T09:29:15Z",
+    "retrieved_utc": "2026-11-14T04:55:10Z",
     "citation": "Stack, K. M. et al. (2020) Photogeologic map of the Perseverance rover field site in Jezero crater constructed by the Mars 2020 Science Team. Space Sci. Rev. 216, 127. doi:10.1007/s11214-020-00739-x",
     "licence": "CC BY 4.0 (Space Science Reviews open access)",
     "landing_page": "https://link.springer.com/article/10.1007/s11214-020-00739-x"
@@ -36,7 +36,7 @@
     "path": "data/raw/climate/mdad/MDAD.tab",
     "size": 2111103,
     "sha256": "33e767d3b8ca095be3a1ed21298dce0260203e8c7701c2118e97b7589add1dc8",
-    "retrieved_utc": "2026-11-14T09:29:23Z",
+    "retrieved_utc": "2026-11-14T03:25:49Z",
     "citation": "Battalio, M. and Wang, H. (2021) The Mars Dust Activity Database (MDAD): a comprehensive statistical study of dust storm sequences. Icarus 354, 114059. Harvard Dataverse doi:10.7910/DVN/F8R2JX",
     "licence": "CC0 1.0",
     "landing_page": "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910%2FDVN%2FF8R2JX"
@@ -57,7 +57,7 @@
     "path": "data/raw/space_weather/Langlais2019.sh.gz",
     "size": 84853,
     "sha256": "3cad9e268f0673be1702f1df504a4cbcb8dba4480c7b3f629921911488fe247b",
-    "retrieved_utc": "2026-11-14T09:29:25Z",
+    "retrieved_utc": "2026-11-14T03:25:51Z",
     "citation": "Langlais, B., Thebault, E., Houliez, A., Purucker, M. E. and Lillis, R. J. (2019) A new model of the crustal magnetic field of Mars using MGS and MAVEN. J. Geophys. Res. Planets 124, 1542-1569. doi:10.1029/2018JE005854",
     "licence": "CC BY 4.0",
     "landing_page": "https://zenodo.org/records/3876714"
