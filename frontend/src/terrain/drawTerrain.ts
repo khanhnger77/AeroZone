@@ -1,11 +1,12 @@
 import type { TerrainPreview } from '../services/terrainPreview'
+import { layerColor, layerRange, type TerrainLayer } from './layers'
 
 export interface TerrainCamera { yaw: number; pitch: number; zoom: number; wireframe: boolean }
 export const DEFAULT_CAMERA: TerrainCamera = { yaw: -0.45, pitch: 0.9, zoom: 1, wireframe: false }
 type Vertex = { x: number; y: number; z: number }
 
 /** Perspective projection of measured terrain triangles, rendered back-to-front. */
-export function drawTerrain(canvas: HTMLCanvasElement, terrain: TerrainPreview, camera: TerrainCamera) {
+export function drawTerrain(canvas: HTMLCanvasElement, terrain: TerrainPreview, camera: TerrainCamera, layer: TerrainLayer = 'elevation', elevationRange?: readonly [number, number], relief?: number) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const width = canvas.clientWidth, height = canvas.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2)
@@ -16,7 +17,7 @@ export function drawTerrain(canvas: HTMLCanvasElement, terrain: TerrainPreview, 
   ctx.fillStyle = sky; ctx.fillRect(0, 0, width, height)
   const half = terrain.span_m / 2, step = terrain.span_m / (terrain.grid - 1)
   const centerZ = terrain.center.elevation_m!
-  const distance = Math.max(terrain.span_m * 1.7, (terrain.max_m - terrain.min_m) * 2.5) / camera.zoom
+  const distance = Math.max(terrain.span_m * 1.7, (relief ?? terrain.max_m - terrain.min_m) * 2.5) / camera.zoom
   const focal = Math.min(width, height * 1.5) * 1.1
   const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch)
   function project(v: Vertex) {
@@ -26,23 +27,27 @@ export function drawTerrain(canvas: HTMLCanvasElement, terrain: TerrainPreview, 
     return { x: width / 2 + x * scale, y: height * .57 - (sp * y + cp * v.z) * scale, depth }
   }
   const vertices: (Vertex | null)[] = terrain.heights.map((z, i) => z === null ? null : { x: (i % terrain.grid) * step - half, y: half - Math.floor(i / terrain.grid) * step, z: z - centerZ })
-  const triangles: { v: Vertex[]; depth: number }[] = []
+  const range = layer === 'elevation' && elevationRange ? elevationRange : layerRange(layer, terrain.min_m, terrain.max_m)
+  const triangles: { v: Vertex[]; depth: number; value: number | null }[] = []
   for (let row = 0; row < terrain.grid - 1; row++) for (let col = 0; col < terrain.grid - 1; col++) {
     const i = row * terrain.grid + col
     for (const indices of [[i, i + terrain.grid, i + 1], [i + 1, i + terrain.grid, i + terrain.grid + 1]]) {
       const v = indices.map(index => vertices[index])
-      if (v.every((point): point is Vertex => point !== null)) triangles.push({ v, depth: v.reduce((sum, p) => sum + project(p).depth, 0) / 3 })
+      if (v.every((point): point is Vertex => point !== null)) {
+        const values = indices.map(index => terrain.layers[layer][index])
+        const value = values.every((v): v is number => v !== null) ? values.reduce((sum, v) => sum + v, 0) / 3 : null
+        triangles.push({ v, value, depth: v.reduce((sum, p) => sum + project(p).depth, 0) / 3 })
+      }
     }
   }
   triangles.sort((a, b) => b.depth - a.depth)
-  for (const { v: [a, b, c] } of triangles) {
+  for (const { v: [a, b, c], value } of triangles) {
     const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }, ac = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z }
     const normal = { x: ab.y * ac.z - ab.z * ac.y, y: ab.z * ac.x - ab.x * ac.z, z: ab.x * ac.y - ab.y * ac.x }
     const norm = Math.hypot(normal.x, normal.y, normal.z) || 1
     const light = Math.max(0, (-.45 * normal.x - .3 * normal.y + .84 * normal.z) / norm)
     const shade = .4 + .6 * light
-    const relativeHeight = Math.max(0, Math.min(1, ((a.z + b.z + c.z) / 3 + centerZ - terrain.min_m) / Math.max(1, terrain.max_m - terrain.min_m)))
-    const base = [157 + relativeHeight * 55, 91 + relativeHeight * 46, 58 + relativeHeight * 32]
+    const base = layerColor(layer, value, range)
     const color = `rgb(${base.map(v => Math.round(v * shade)).join(',')})`
     const projected = [a, b, c].map(project)
     ctx.beginPath(); ctx.moveTo(projected[0].x, projected[0].y)
