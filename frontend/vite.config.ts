@@ -29,5 +29,9 @@ export default defineConfig({
     port: 4173,
     proxy: { '/api': 'http://127.0.0.1:8000', '^/\\.?sim(/|$)': { target: 'http://127.0.0.1:8100', ws: true, rewrite: (path: string) => path.replace(/^\/\.sim(?=\/|$)/, '/sim') } },
     allowedHosts: ['.trycloudflare.com', '.run.app'],
+    // Leave CORS to the backends: Vite's own handler answers preflights itself and trusts only
+    // localhost, so the GitHub Pages frontend's POSTs to /api and /sim were blocked. With it off,
+    // OPTIONS goes through the proxy to FastAPI (any origin) and the sim (MO_CORS_ORIGINS).
+    cors: false,
   },
 })
