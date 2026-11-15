@@ -80,3 +80,6 @@ test = "python -m pytest -q sim/tests sim/obstacle_avoid/tests tests odyssey_cop
 build = { cmd = "npm run build", cwd = "frontend" }
 preview = { cmd = "npx vite preview --host 127.0.0.1 --port 4173 --strictPort", cwd = "frontend" }
 weather-data = { cmd = "python scripts/build_weather.py", description = "Download and summarize the MEDA historical weather snapshot" }
+# Online demo: publish the backend (code + terrain rasters) to a Hugging Face Space; see docs/deployment.md.
+# huggingface_hub runs in a throwaway `pixi exec` env, so pixi.lock (the sim's pinned physics) is untouched.
+deploy-space = { cmd = "pixi exec --spec huggingface_hub --spec python=3.11 -- python scripts/deploy_space.py", description = "Upload the backend to a Hugging Face Space (--space <user>/<space>)" }

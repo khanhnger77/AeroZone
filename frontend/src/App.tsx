@@ -27,6 +27,7 @@ import {
 import { BatteryMedium, Gamepad2, Navigation, Power, Wind } from 'lucide-react'
 import { useMedia } from './useMedia'
 import { useConnections } from './useConnections'
+import { SIM_ORIGIN, backendUrl } from './services/endpoints'
 import ConnectionStatus from './components/ConnectionStatus'
 import PlaceCard, { type PlaceViewTab, type SelectedPlace } from './components/PlaceCard'
 import OdysseyCopilot, { type CopilotAction } from './components/OdysseyCopilot'
@@ -239,7 +240,7 @@ export default function App() {
   const goto = useCallback((agent: string | undefined, p: { lon: number; lat: number }, route?: string) => command({ type: 'goto', agent, lon: p.lon, lat: p.lat, route }), [command])
   const intercept = useCallback((agent: string | undefined, target: string) => command({ type: 'intercept', agent, target }), [command])
   const postToSim = useCallback((msg: Record<string, unknown>) => {
-    iframe.current?.contentWindow?.postMessage({ source: 'mo-hub', ...msg }, location.origin)
+    iframe.current?.contentWindow?.postMessage({ source: 'mo-hub', ...msg }, SIM_ORIGIN)
   }, [])
   // Locations for the 3D page's ground guide arrows (sent on change and when the page is ready).
   const sendLocations = useRef(() => {})
@@ -271,7 +272,7 @@ export default function App() {
     if (!demo || !controls) return
     let active = true, initialized = startedMissions.current.has(demo.id)
     const receive = async (event: MessageEvent) => {
-      if (event.origin !== location.origin || event.source !== iframe.current?.contentWindow || event.data?.source !== 'mo-sim') return
+      if (event.origin !== SIM_ORIGIN || event.source !== iframe.current?.contentWindow || event.data?.source !== 'mo-sim') return
       const data = event.data
       if (data.type === 'camera') setSimCamera(data.mode)
       if (data.type === 'ready') sendLocations.current()     // the 3D page's ground arrows point at these
@@ -662,7 +663,7 @@ export default function App() {
       onTravel={() => { goto(undefined, focusedLocation, 'cautious') }} onClose={() => setFocus(null)} />
   ) : null)
 
-  const demoBackground = demo && <iframe ref={iframe} key={demo.id} title="Mars 3D simulation" src={`/sim/?embed=1&m=${encodeURIComponent(demo.id)}`} className="absolute inset-0 h-full w-full border-0" />
+  const demoBackground = demo && <iframe ref={iframe} key={demo.id} title="Mars 3D simulation" src={`${backendUrl('/sim/')}?embed=1&m=${encodeURIComponent(demo.id)}&parent=${encodeURIComponent(location.origin)}`} className="absolute inset-0 h-full w-full border-0" />
   // Right column above the tracking minimap: the 3D view selector (moved out of the 3D page) and the lidar.
   const setView = (mode: 'chase' | 'orbit' | 'overview') => { postToSim({ type: 'camera', mode }); setSimCamera(mode) }
   const lidar = demo && (

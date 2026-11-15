@@ -104,7 +104,10 @@ def test_world_endpoint_and_commands(terrain_tif, tmp_path):
         assert r["ok"] is False
         ws = await c.ws_connect("/sim/ws")
         await c.post("/sim/api/command", json={"type": "start"})
-        wmsg = await next_of(ws, "world")
+        for _ in range(10):                                 # a 5 Hz frame sent before "start" landed
+            wmsg = await next_of(ws, "world")
+            if wmsg["running"]:
+                break
         assert len(wmsg["agents"]) == 3 and wmsg["running"]
         r = await (await c.post("/sim/api/command", json={"type": "select", "agent": "a1", "manual": True})).json()
         assert r["ok"] and r["selected"] == "a1" and r["model"] == "astronaut"

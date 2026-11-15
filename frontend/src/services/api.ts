@@ -1,5 +1,9 @@
 import type { FC, LayersManifest, LonLat, PointInfo, RouteResponse, SampleProps } from '../types'
 
+// Same rule as services/endpoints.ts, inlined: tests load this module on its own, without imports.
+const API_BASE = (import.meta.env?.VITE_BACKEND_URL ?? '').trim().replace(/\/+$/, '')
+const backendUrl = (path: string) => API_BASE + path
+
 async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init)
   if (!r.ok) {
@@ -22,10 +26,10 @@ export const loadWaypoints = () =>
   )
 
 export const getPoint = (p: LonLat, signal?: AbortSignal) =>
-  getJSON<PointInfo>(`/api/point?lon=${p.lon}&lat=${p.lat}`, { signal })
+  getJSON<PointInfo>(backendUrl(`/api/point?lon=${p.lon}&lat=${p.lat}`), { signal })
 
 export const planRoute = (start: LonLat, end: LonLat) =>
-  getJSON<RouteResponse>('/api/route', {
+  getJSON<RouteResponse>(backendUrl('/api/route'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ start, end }),
@@ -44,6 +48,6 @@ export interface RawImage {
 /** NASA Mars 2020 raw-image feed, proxied by the backend (browser CORS is blocked).
  *  Images are tied to a sol, not a precise position. Science cameras are ranked first. */
 export async function rawImagesForSol(sol: number, n = 12): Promise<RawImage[]> {
-  const j = await getJSON<{ images: RawImage[] }>(`/api/raw-images?sol=${sol}&n=${n}`)
+  const j = await getJSON<{ images: RawImage[] }>(backendUrl(`/api/raw-images?sol=${sol}&n=${n}`))
   return j.images
 }

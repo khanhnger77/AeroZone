@@ -49,6 +49,13 @@ may generate a new URL. The launcher downloads `cloudflared` on Linux/Windows.
 On macOS, install it first with `brew install cloudflared`.
 Stop the local demo before running `share`, since both use the same ports.
 
+## Permanent online demo
+
+For a link that does not depend on a running laptop, the frontend is published to **GitHub Pages**.
+The planner API, Copilot and 3D sim run in a free **Hugging Face Docker Space**
+(`Dockerfile`, `pixi run deploy-space`). Both update automatically on every push to `main`.
+Setup and updating: [deployment guide](docs/deployment.md).
+
 ## Modules
 
 | Module | Directory | Responsibility |

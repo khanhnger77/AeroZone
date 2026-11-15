@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { backendUrl } from './services/endpoints'
 
 export type ConnectionState = 'checking' | 'online' | 'offline'
 
@@ -31,8 +32,8 @@ export function useConnections() {
       pending.current = true
       setChecking(true)
       await Promise.all([
-        check('/api/health', body => body.status === 'ok', setPlanner),
-        check('/sim/config', body => body.protocol === 'mo-sim/1', setSim),
+        check(backendUrl('/api/health'), body => body.status === 'ok', setPlanner),
+        check(backendUrl('/sim/config'), body => body.protocol === 'mo-sim/1', setSim),
       ])
       if (active) { pending.current = false; setChecking(false) }
     }

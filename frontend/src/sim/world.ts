@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Boxes, Building2, Gem, Package, PersonStanding, Sprout, TriangleAlert, Truck, type LucideIcon } from 'lucide-react'
 import { haversineM } from '../map/geo'
+import { backendWs } from '../services/endpoints'
 
 /* ------------------------------------------------------------------ marker types (map + legend) */
 export const LOCATION_TYPES = ['HQ', 'Geological', 'Cargo', 'Supplies', 'Greenhouse', 'Attention'] as const
@@ -86,7 +87,7 @@ export function useSimWorld(active: boolean, onEnded: () => void) {
     let stopped = false, socket: WebSocket | null = null
     let retry: ReturnType<typeof setTimeout> | undefined
     const connect = () => {
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/sim/ws`)
+      socket = new WebSocket(backendWs('/sim/ws'))
       socket.onmessage = e => {
         if (typeof e.data !== 'string') return
         try {

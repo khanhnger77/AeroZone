@@ -22,12 +22,12 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': 'http://127.0.0.1:8000', '^/\\.?sim(/|$)': { target: 'http://127.0.0.1:8100', ws: true, rewrite: (path: string) => path.replace(/^\/\.sim(?=\/|$)/, '/sim') } },
     // allow sharing via Cloudflare quick tunnels (https://<random>.trycloudflare.com)
-    allowedHosts: ['.trycloudflare.com'],
+    allowedHosts: ['.trycloudflare.com', '.hf.space'],
   },
   // `vite preview` (production build) uses the same proxy + host rules
   preview: {
     port: 4173,
     proxy: { '/api': 'http://127.0.0.1:8000', '^/\\.?sim(/|$)': { target: 'http://127.0.0.1:8100', ws: true, rewrite: (path: string) => path.replace(/^\/\.sim(?=\/|$)/, '/sim') } },
-    allowedHosts: ['.trycloudflare.com'],
+    allowedHosts: ['.trycloudflare.com', '.hf.space'],
   },
 })

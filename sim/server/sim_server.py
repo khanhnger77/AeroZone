@@ -21,6 +21,7 @@ import copy
 import json
 import logging
 import math
+import os
 import secrets
 import signal
 import time
@@ -1050,9 +1051,41 @@ async def handle_ws(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+def _cors_origins() -> set[str]:
+    """Origins allowed to call /sim from another site (a static frontend on GitHub Pages).
+
+    MO_CORS_ORIGINS is a comma-separated list, or "*" for any origin. Unset means none: local runs
+    serve the planner and the sim from one origin and need no CORS.
+    """
+    return {o.strip().rstrip("/") for o in os.environ.get("MO_CORS_ORIGINS", "").split(",") if o.strip()}
+
+
+CORS_KEY = web.AppKey("cors_origins", set)
+
+
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    """Answer CORS preflights and tag responses for the allowed origins (no cookies are used)."""
+    allowed = request.app[CORS_KEY]
+    origin = request.headers.get("Origin", "")
+    ok = bool(origin) and ("*" in allowed or origin in allowed)
+    if ok and request.method == "OPTIONS" and "Access-Control-Request-Method" in request.headers:
+        resp: web.StreamResponse = web.Response(status=204)
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers", "Content-Type")
+        resp.headers["Access-Control-Max-Age"] = "600"
+    else:
+        resp = await handler(request)
+    if ok and not resp.prepared:   # a prepared (WebSocket/streamed) response has sent its headers
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+    return resp
+
+
 def make_app(sim: SimServer | None = None) -> web.Application:
     """Build the aiohttp application with every C5 route under /sim."""
-    app = web.Application(client_max_size=32 * 1024 * 1024)
+    app = web.Application(client_max_size=32 * 1024 * 1024, middlewares=[cors_middleware])
+    app[CORS_KEY] = _cors_origins()
     app[SIM_KEY] = sim or SimServer()
 
     r = app.router

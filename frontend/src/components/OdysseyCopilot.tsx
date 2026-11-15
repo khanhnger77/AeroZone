@@ -12,6 +12,7 @@ import {
   Sparkles,
   RefreshCw
 } from 'lucide-react'
+import { backendUrl } from '../services/endpoints'
 
 export interface CopilotAction {
   action_type: 'INSPECT_TERRAIN' | 'PLAN_ROUTE' | 'FOCUS_SAMPLE' | 'NAVIGATE_WAYPOINT' | 'SHOW_WEATHER' | 'SHOW_SPACE_WEATHER' | 'TOGGLE_LAYER' | string
@@ -43,7 +44,7 @@ export function OdysseyCopilot({
   apiUrl,
   apiBaseUrl,
 }: OdysseyCopilotProps) {
-  const endpoint = apiBaseUrl || apiUrl || '/api/copilot/chat'
+  const endpoint = apiBaseUrl || apiUrl || backendUrl('/api/copilot/chat')
   const [isOpen, setIsOpen] = useState<boolean>(true)
   const [input, setInput] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)

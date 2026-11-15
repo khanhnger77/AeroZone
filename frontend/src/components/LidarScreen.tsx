@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { parseLidar, type LidarFrame } from '../services/lidar'
+import { backendWs } from '../services/endpoints'
 
 const COLORS = { track: '#34d399', avoid: '#5ee6ff', recover: '#fbbf24', blocked: '#f87171' }
 export default function LidarScreen() {
@@ -11,7 +12,7 @@ export default function LidarScreen() {
     let stopped = false, socket: WebSocket | null = null
     let retry: ReturnType<typeof setTimeout> | undefined
     function connect() {
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/sim/ws`)
+      socket = new WebSocket(backendWs('/sim/ws'))
       socket.binaryType = 'arraybuffer'
       socket.onopen = () => { setStatus('waiting for scan'); socket?.send(JSON.stringify({ type: 'subscribe', topics: ['lidar'] })) }
       socket.onmessage = e => {

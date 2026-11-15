@@ -38,6 +38,7 @@ WEB_DATA = FRONTEND / "public" / "data"
 TOOLS_DIR = ROOT / "sim" / ".tools"
 
 PORT_API, PORT_SIM, PORT_WEB = 8000, 8100, 4173
+HOST_WEB = "127.0.0.1"  # --host 0.0.0.0 in a container (Hugging Face Space), where :PORT_WEB is public
 CORE_SCRIPTS = ["download_data.py", "validate_data.py", "process_terrain.py",
                 "generate_hazard.py", "render_layers.py", "build_science_targets.py"]
 ENV_SCRIPTS = [("download_env_data.py", ["--skip-large"]), ("process_geology.py", []), ("generate_hazard.py", []),
@@ -384,7 +385,7 @@ def start_servers() -> list[Child]:
     # cmd.exe ask "Terminate batch job (Y/N)?", which blocks a clean shutdown.
     vite_js = FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"
     web_cmd = ([which("node"), str(vite_js)] if vite_js.exists() else [which("npx"), "vite"]) + \
-        ["preview", "--host", "127.0.0.1", "--port", str(PORT_WEB), "--strictPort"]
+        ["preview", "--host", HOST_WEB, "--port", str(PORT_WEB), "--strictPort"]
     return [
         Child("api", "blue", [py, "-m", "uvicorn", "backend.main:app", "--port", str(PORT_API), "--log-level", "warning"], ROOT),
         Child("sim", "magenta", [py, "-m", "sim.server.sim_server", "--port", str(PORT_SIM)], ROOT),
@@ -488,6 +489,7 @@ def banner(public: str | None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global HOST_WEB, PORT_WEB
     setup_console()
     ap = argparse.ArgumentParser(description="Prepare and start MARS ODYSSEY on :4173")
     ap.add_argument("--share", action="store_true", help="also open a public Cloudflare quick tunnel")
@@ -495,7 +497,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-env-data", action="store_true", help="skip the optional environment & geology data")
     ap.add_argument("--allow-env-drift", action="store_true",
                     help="start even if installed packages differ from pixi.lock (not recommended)")
+    ap.add_argument("--host", default=HOST_WEB,
+                    help="address the web app listens on (0.0.0.0 inside a container); API and sim stay local")
+    ap.add_argument("--port", type=int, default=PORT_WEB, help="port of the web app, which also proxies /api and /sim")
     args = ap.parse_args(argv)
+    HOST_WEB, PORT_WEB = args.host, args.port
 
     busy = [p for p in (PORT_API, PORT_SIM, PORT_WEB) if port_busy(p)]
     if busy:

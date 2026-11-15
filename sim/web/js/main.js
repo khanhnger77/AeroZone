@@ -14,6 +14,11 @@ import { AstronautView } from './astronaut.js';
 const params = new URLSearchParams(location.search);
 const EMBED = params.get('embed') === '1';
 const IN_FRAME = window.parent !== window;
+// The planner page that embeds this sim: same origin locally; on a static deployment (GitHub
+// Pages) it is another origin, passed as ?parent=<origin>. Messages go to and come from it only.
+const PARENT_ORIGIN = (() => {
+  try { const p = params.get('parent'); return p ? new URL(p).origin : location.origin; } catch { return location.origin; }
+})();
 if (EMBED) document.body.classList.add('embed');
 
 const $ = (id) => document.getElementById(id);
@@ -24,7 +29,7 @@ const CHASE_ON_FOOT = { back: 5.5, up: 2.6, tau: 0.25, minClear: 1.2 };   // ast
 
 // ------------------------------------------------------------------------------- parent window (C7)
 function post(type, payload = {}) {
-  if (IN_FRAME) window.parent.postMessage({ source: 'mo-sim', type, ...payload }, location.origin);
+  if (IN_FRAME) window.parent.postMessage({ source: 'mo-sim', type, ...payload }, PARENT_ORIGIN);
 }
 
 // ------------------------------------------------------------------------------- UI helpers
@@ -549,7 +554,7 @@ for (const kind of ['physics_event', 'avoid_event']) {
 
 // Planner -> sim messages (C7).
 window.addEventListener('message', (e) => {
-  if (e.origin !== location.origin) return;
+  if (e.origin !== PARENT_ORIGIN) return;
   const d = e.data;
   if (!d || d.source !== 'mo-hub') return;
   if (d.type === 'command' && d.command && typeof d.command === 'object') {

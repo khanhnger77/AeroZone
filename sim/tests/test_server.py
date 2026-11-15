@@ -106,6 +106,43 @@ def test_redirect_keeps_query(terrain_tif, tmp_path):
     run(body, make_sim(terrain_tif, tmp_path))
 
 
+def test_cors_only_for_configured_origins(terrain_tif, tmp_path, monkeypatch):
+    """A static frontend on another origin (GitHub Pages) may call /sim only when allowed."""
+    pages = "https://team.github.io"
+    preflight = {"Origin": pages, "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"}
+
+    async def unset(c):   # local default: same origin, no CORS headers at all
+        resp = await c.get("/sim/config", headers={"Origin": pages})
+        assert resp.status == 200 and "Access-Control-Allow-Origin" not in resp.headers
+
+    monkeypatch.delenv("MO_CORS_ORIGINS", raising=False)
+    run(unset, make_sim(terrain_tif, tmp_path))
+
+    async def allowed(c):
+        resp = await c.options("/sim/api/command", headers=preflight)
+        assert resp.status == 204
+        assert resp.headers["Access-Control-Allow-Origin"] == pages
+        assert "POST" in resp.headers["Access-Control-Allow-Methods"]
+        assert resp.headers["Access-Control-Allow-Headers"] == "content-type"
+        resp = await c.get("/sim/config", headers={"Origin": pages})
+        assert resp.status == 200 and resp.headers["Access-Control-Allow-Origin"] == pages
+        resp = await c.get("/sim/config", headers={"Origin": "https://evil.example"})
+        assert "Access-Control-Allow-Origin" not in resp.headers
+        ws = await c.ws_connect("/sim/ws", headers={"Origin": pages})   # sockets are not blocked
+        await ws.close()
+
+    monkeypatch.setenv("MO_CORS_ORIGINS", pages + "/, https://other.example")
+    run(allowed, make_sim(terrain_tif, tmp_path))
+
+    async def wildcard(c):
+        resp = await c.get("/sim/config", headers={"Origin": "https://anyone.example"})
+        assert resp.headers["Access-Control-Allow-Origin"] == "https://anyone.example"
+
+    monkeypatch.setenv("MO_CORS_ORIGINS", "*")
+    run(wildcard, make_sim(terrain_tif, tmp_path))
+
+
 def test_mission_validation_and_missing_terrain(terrain_tif, tmp_path):
     async def bad(c):
         for payload in ({}, {"route": {"coordinates": [[77.4, 18.46]]}},

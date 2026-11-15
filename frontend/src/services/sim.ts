@@ -1,7 +1,8 @@
 import type { LonLat, Route, RouteResponse } from '../types'
 import type { WorldState } from '../sim/world'
 
-export const SIM_BASE = '/sim/'
+// Same rule as services/endpoints.ts, inlined: tests load this module on its own, without imports.
+export const SIM_BASE = `${(import.meta.env?.VITE_BACKEND_URL ?? '').trim().replace(/\/+$/, '')}/sim/`
 export interface SimNav {
   state: 'idle' | 'driving' | 'paused' | 'arrived'
   progress: number; distance_done_m: number; distance_remaining_m: number
