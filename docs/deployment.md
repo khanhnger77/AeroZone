@@ -75,8 +75,10 @@ When nobody has used it for a while, the first visit starts a container, which t
 The repository owner does this. Pages is free for public repositories.
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-2. **Settings → Secrets and variables → Actions → Variables:** add `BACKEND_URL` = the Cloud Run
-   URL from step 1 (no trailing slash).
+2. The current backend address (`https://aerozone-215073679410.us-central1.run.app`) is built
+   into `pages.yml`. Only if the backend moves, either edit it there or add the repository
+   variable **Settings → Secrets and variables → Actions → Variables → `BACKEND_URL`**. It must
+   be a Variable, not a Secret, and have no trailing slash.
 3. **Settings → Environments → github-pages → Deployment branches and tags → Add rule:**
    `deploy/web`. By default Pages only accepts deployments from the default branch (`main`), and
    `main` is kept for local runs, so it never deploys.
