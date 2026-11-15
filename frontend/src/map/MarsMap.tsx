@@ -23,6 +23,7 @@ export interface MapLayerState {
 
 interface Props {
   place?: SelectedPlace | null
+  comparison?: LonLat | null
   showPlaces?: boolean
   onPanoramaClick?: (point: SelectedPlace) => void
   tracking?: boolean
@@ -293,6 +294,7 @@ export default function MarsMap(p: Props) {
           <Tooltip className="mo-tip">{site.name} · panorama sol {site.sols}</Tooltip>
         </Marker>)}
         {p.place && p.showPlaces && <CircleMarker center={[p.place.lat, p.place.lon]} radius={7} pathOptions={{ color: '#5ee6ff', fillOpacity: .3, weight: 2 }} interactive={false} />}
+        {p.comparison && !p.tracking && <CircleMarker center={[p.comparison.lat, p.comparison.lon]} radius={8} pathOptions={{ color: '#d8b4fe', fillOpacity: .35, weight: 2 }} interactive={false}><Tooltip permanent direction="top" className="mo-tip">Terrain B</Tooltip></CircleMarker>}
         <Events onViewportChange={p.onViewportChange} onCursor={p.onCursor} onMapClick={p.onMapClick} />
         <FlyTo flyTo={p.tracking ? null : p.flyTo} />
         <FitRoute route={p.route} pad={p.fitPadding ?? [[470, 90], [260, 230]]} />

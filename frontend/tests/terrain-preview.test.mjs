@@ -5,8 +5,9 @@ import ts from 'typescript'
 const compile = text => `data:text/javascript;base64,${Buffer.from(ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText).toString('base64')}`
 const geo = compile(await readFile(new URL('../src/map/geo.ts', import.meta.url), 'utf8'))
 const api = compile('export function getPoint(...args) { return globalThis.__previewPoint(...args) }')
+const layerModule = compile(await readFile(new URL('../src/terrain/layers.ts', import.meta.url), 'utf8'))
 const source = (await readFile(new URL('../src/services/terrainPreview.ts', import.meta.url), 'utf8'))
-  .replace("from './api'", `from '${api}'`).replace("from '../map/geo'", `from '${geo}'`)
+  .replace("from '../terrain/layers'", `from '${layerModule}'`).replace("from './api'", `from '${api}'`).replace("from '../map/geo'", `from '${geo}'`)
 const { loadTerrainPreview } = await import(compile(source))
 const { MARS_RADIUS_M } = await import(geo)
 globalThis.__previewPoint = () => { throw new Error('Mock required') }
@@ -95,4 +96,35 @@ test('isolated valid pixels cannot masquerade as a connected terrain surface', a
     return { inside: Math.abs(x) > 79 && Math.abs(y) > 79, elevation_m: -2500 }
   })
   await assert.rejects(loadTerrainPreview(point, new AbortController().signal, () => {}), /Not enough terrain coverage/)
+})
+
+
+test('preview retains measured analysis values, valid zeros and missing data without extra requests', async t => {
+  const point = { lon: 77.44, lat: 18.485 }
+  let calls = 0
+  t.mock.method(globalThis, '__previewPoint', async p => {
+    calls++
+    return { inside: true, elevation_m: -2500, slope_deg: p.lon < point.lon ? null : 0, roughness_m: .12, hazard: 42 }
+  })
+  const data = await loadTerrainPreview(point, new AbortController().signal, () => {})
+  assert.equal(calls, 289)
+  assert.equal(data.layers.elevation, data.heights)
+  assert(data.layers.slope.includes(0))
+  assert(data.layers.slope.includes(null))
+  assert(data.layers.roughness.every(value => value === .12))
+  assert(data.layers.hazard.every(value => value === 42))
+  const cached = await loadTerrainPreview(point, new AbortController().signal, () => {})
+  assert.equal(cached, data)
+  assert.equal(calls, 289)
+})
+
+test('analysis color scales use physical units, clamp extremes and distinguish missing values', async () => {
+  const { layerRange, layerColor } = await import(layerModule)
+  assert.deepEqual(layerRange('elevation', -2600, -2500), [-2600, -2500])
+  assert.deepEqual(layerRange('slope', 0, 90), [0, 30])
+  assert.deepEqual(layerRange('roughness', 0, 5), [0, .5])
+  assert.deepEqual(layerRange('hazard', 0, 999), [0, 100])
+  assert.deepEqual(layerColor('hazard', 150, [0, 100]), layerColor('hazard', 100, [0, 100]))
+  assert.notDeepEqual(layerColor('slope', null, [0, 30]), layerColor('slope', 0, [0, 30]))
+  assert(layerColor('elevation', -2500, [-2500, -2500]).every(Number.isFinite))
 })

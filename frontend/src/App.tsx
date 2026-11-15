@@ -128,6 +128,15 @@ export default function App() {
 
   const [place, setPlace] = useState<SelectedPlace | null>(null)
   const [placeView, setPlaceView] = useState<PlaceViewTab | null>(null)
+  const [comparePoint, setComparePoint] = useState<SelectedPlace | null>(null)
+  const [comparePicking, setComparePicking] = useState(false)
+  useEffect(() => { setComparePoint(null); setComparePicking(false) }, [place?.lon, place?.lat, placeView])
+  const pickComparison = useCallback((point: SelectedPlace) => {
+    if (!comparePicking || !place || placeView !== 'terrain') return false
+    if (Math.abs(point.lon - place.lon) < 1e-9 && Math.abs(point.lat - place.lat) < 1e-9) return true
+    setComparePoint(point); setComparePicking(false)
+    return true
+  }, [comparePicking, place, placeView])
 
   const [weatherSol, setWeatherSol] = useState<number | null>(null)
   const [selectedSample, setSelectedSample] = useState<number | null>(null)
@@ -309,6 +318,7 @@ export default function App() {
   const onMapClick = useCallback((p: LonLat) => {
     if (demo && navPicking) { goto(undefined, p); setNavPicking(false); setNavOpen(false); return }   // "Select on map"
     if (demo || demoLoading) return
+    if (pickComparison(p)) return
     if (placing) {
       setLocations(list => {
         const loc = { id: crypto.randomUUID(), name: nextLocationName(placing, list), type: placing, lon: p.lon, lat: p.lat }
@@ -322,16 +332,17 @@ export default function App() {
     else if (pickMode === 'end') { setEnd(p); setPickMode(null); setRoute(null); setPlace(null); setPlaceView(null) }
     else if (focus) setFocus(null)                    // a plain click closes the object / location popup
     else if (!mobile) setPlace(p)
-  }, [pickMode, end, demo, demoLoading, mobile, navPicking, placing, traverseFor, focus, goto])
+  }, [pickMode, end, demo, demoLoading, mobile, navPicking, placing, traverseFor, focus, goto, pickComparison])
 
   const moveLocation = useCallback((id: string, pt: Partial<Pick<MapLocation, 'lon' | 'lat' | 'description'>>) => setLocations(list => list.map(l => (l.id === id ? { ...l, ...pt } : l))), [])
   const focusLocation = useCallback((id: string) => {
     const loc = locations.find(l => l.id === id)
     if (!loc) return
+    if (pickComparison(loc)) return
     if (traverseFor && !demo) { goto(traverseFor, loc, 'cautious'); setTraverseFor(null); setFocus({ kind: 'agent', id: traverseFor }); return }   // locations: cautious route
     setFocus({ kind: 'location', id }); setPlace(null); setPlaceView(null)
     fly(loc.lon, loc.lat, Math.max(zoom, 15))
-  }, [locations, traverseFor, demo, goto, fly, zoom])
+  }, [locations, traverseFor, demo, goto, fly, zoom, pickComparison])
   const focusAgent = useCallback((id: string) => {
     if (traverseFor && !demo && id !== traverseFor) { intercept(traverseFor, id); setFocus({ kind: 'agent', id: traverseFor }); setTraverseFor(null); return }
     setFocus({ kind: 'agent', id }); setPlace(null); setPlaceView(null)
@@ -543,8 +554,8 @@ export default function App() {
     <div className={demo ? 'mo-tracking glass absolute right-3 bottom-[76px] z-[1000] w-[200px] overflow-hidden rounded-lg md:bottom-[60px]' : 'absolute inset-0'}>
       <div className={demo ? 'flex h-7 items-center justify-between px-2 text-[10px]' : 'hidden'}><span>Tracking · {session?.kind === 'world' ? selectedAgent?.name : selRoute?.label}{navPicking ? ' · click a target' : ''}</span><span className="flex items-center gap-1.5">{session?.kind === 'world' ? '' : `${((telemetry?.nav.progress ?? 0) * 100).toFixed(0)}%`}<button type="button" onClick={() => setTrackLock(v => !v)} aria-pressed={trackLock} title={trackLock ? 'Centred on the object (click to free the map)' : 'Track and centre the object'} className={`grid h-5 w-5 place-items-center rounded ${trackLock ? 'bg-cyan/20 text-cyan' : 'text-muted hover:text-ink'}`}><Crosshair size={12} /></button></span></div>
       <div className={demo ? 'h-[110px]' : 'h-full'}>
-    <MarsMap place={place} showPlaces={!mobile && !demo && !pickMode}
-      onPanoramaClick={(point) => { setPickMode(null); setPlace(point); setPlaceView('panorama') }}
+    <MarsMap place={place} comparison={placeView === 'terrain' ? comparePoint : null} showPlaces={!mobile && !demo && !pickMode}
+      onPanoramaClick={(point) => { if (pickComparison(point)) return; setPickMode(null); setPlace(point); setPlaceView('panorama') }}
       tracking={!!demo} rover={telemetry} manifest={manifest} layers={layers} samples={samples} traverse={traverse} waypoints={waypoints}
       route={route} selectedRoute={selectedRoute} start={start} end={end}
       pickMode={pickMode ?? (placing || traverseFor || navPicking ? 'end' : null)}
@@ -553,11 +564,11 @@ export default function App() {
       onLocationMove={moveLocation}
       follow={focusedAgent && !traverseFor ? { lon: focusedAgent.lon, lat: focusedAgent.lat } : null}   // free map while choosing
       trackLock={trackLock}
-      onWaypointClick={sol => { if (demo || demoLoading) return; setWeatherSol(sol); setTab('weather'); setPanelOpen(true); setPlace(null); setPlaceView(null) }}
+      onWaypointClick={sol => { if (demo || demoLoading) return; const waypoint = waypoints?.features.find(f => f.properties.sol === sol); if (waypoint && pickComparison({ lon: waypoint.properties.lon, lat: waypoint.properties.lat, name: `Waypoint sol ${sol}` })) return; setWeatherSol(sol); setTab('weather'); setPanelOpen(true); setPlace(null); setPlaceView(null) }}
       onViewportChange={setViewport} selectedSample={selectedSample} hoverPoint={hoverPoint} flyTo={flyTo} onCursor={onCursor} onMapClick={onMapClick}
       crisp={zoom >= 16}
       fitPadding={mobile ? [[24, 80], [24, 230]] : [[panelOpen ? 470 : 100, 90], [260, 230]]}
-      onSampleClick={(no) => { if (!demo) { setSelectedSample(no); setTab('science'); setPanelOpen(true); const sample = samples?.features.find(f => f.properties.sample_no === no); if (sample && !mobile) { const [lon, lat] = sample.geometry.coordinates as [number, number]; setPlace({ lon, lat, name: sample.properties.name }) } } }} />
+      onSampleClick={(no) => { if (!demo) { const target = samples?.features.find(f => f.properties.sample_no === no); if (target) { const [lon, lat] = target.geometry.coordinates as [number, number]; if (pickComparison({ lon, lat, name: target.properties.name })) return } setSelectedSample(no); setTab('science'); setPanelOpen(true); const sample = samples?.features.find(f => f.properties.sample_no === no); if (sample && !mobile) { const [lon, lat] = sample.geometry.coordinates as [number, number]; setPlace({ lon, lat, name: sample.properties.name }) } } }} />
       </div>
     </div>
   )
@@ -717,7 +728,7 @@ export default function App() {
       onTarget={() => setTarget(place.lon, place.lat)} onClose={() => setPlace(null)} />
   </aside>
   const pointViewer = place && placeView && !demo && !pickMode && <Suspense fallback={<div className="glass absolute bottom-[60px] right-3 z-[1200] rounded-xl p-4 text-xs">Loading place viewer…</div>}>
-    <PlaceViewer point={place} tab={placeView} online={apiOk === true} onTab={setPlaceView} onClose={() => setPlaceView(null)} onVisit={point => { setPlace(point); fly(point.lon, point.lat, 17) }} />
+    <PlaceViewer point={place} tab={placeView} online={apiOk === true} comparison={comparePoint} picking={comparePicking} onCompare={() => { setPickMode(null); setPlacing(null); setTraverseFor(null); setFocus(null); setComparePicking(true) }} onCancelCompare={() => setComparePicking(false)} onClearCompare={() => { setComparePoint(null); setComparePicking(false) }} onTab={setPlaceView} onClose={() => setPlaceView(null)} onVisit={point => { setPlace(point); fly(point.lon, point.lat, 17) }} />
   </Suspense>
 
   /* ===================== desktop / laptop layout ===================== */

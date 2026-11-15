@@ -1,6 +1,7 @@
 import { getPoint } from './api'
 import { MARS_RADIUS_M } from '../map/geo'
 import type { LonLat, PointInfo } from '../types'
+import { TERRAIN_LAYERS, type TerrainLayer } from '../terrain/layers'
 
 export const PREVIEW_SPAN_M = 160
 export const PREVIEW_GRID = 17
@@ -8,6 +9,7 @@ export interface TerrainPreview {
   point: LonLat
   center: PointInfo
   heights: (number | null)[] // north-to-south rows, west-to-east columns; MOLA areoid metres
+  layers: Record<TerrainLayer, (number | null)[]>
   grid: number
   span_m: number
   min_m: number
@@ -32,7 +34,14 @@ export async function loadTerrainPreview(point: LonLat, signal: AbortSignal, onP
     if (center.elevation_m == null || !Number.isFinite(center.elevation_m)) throw new Error('No elevation data at this point. Choose a nearby location.')
     const count = PREVIEW_GRID ** 2, middle = (PREVIEW_GRID - 1) / 2
     const heights: (number | null)[] = Array(count).fill(null)
-    heights[middle * PREVIEW_GRID + middle] = center.elevation_m
+    const layers = Object.fromEntries(TERRAIN_LAYERS.map(layer => [layer.id, layer.id === 'elevation' ? heights : Array(count).fill(null)])) as Record<TerrainLayer, (number | null)[]>
+    function record(index: number, info: PointInfo) {
+      for (const layer of TERRAIN_LAYERS) {
+        const value = info[layer.field]
+        layers[layer.id][index] = info.inside && typeof value === 'number' && Number.isFinite(value) ? value : null
+      }
+    }
+    record(middle * PREVIEW_GRID + middle, center)
     const step = PREVIEW_SPAN_M / (PREVIEW_GRID - 1)
     const lonPerM = 180 / Math.PI / (MARS_RADIUS_M * Math.cos(point.lat * Math.PI / 180))
     const latPerM = 180 / Math.PI / MARS_RADIUS_M
@@ -44,7 +53,7 @@ export async function loadTerrainPreview(point: LonLat, signal: AbortSignal, onP
         if (i === middle * PREVIEW_GRID + middle) continue
         const row = Math.floor(i / PREVIEW_GRID), col = i % PREVIEW_GRID
         const info = await getPoint({ lon: point.lon + (col - middle) * step * lonPerM, lat: point.lat + (middle - row) * step * latPerM }, controller.signal)
-        heights[i] = info.inside && info.elevation_m != null && Number.isFinite(info.elevation_m) ? info.elevation_m : null
+        record(i, info)
         completed++
         if (completed % 12 === 0 || completed === count) onProgress(Math.round(completed / count * 100))
       }
@@ -58,7 +67,7 @@ export async function loadTerrainPreview(point: LonLat, signal: AbortSignal, onP
       if ([i + 1, i + PREVIEW_GRID, i + PREVIEW_GRID + 1].every(index => heights[index] !== null)) faces++
     }
     if (faces < 2) throw new Error('Not enough terrain coverage here. Choose a point farther inside the study area.')
-    const result = { point, center, heights, grid: PREVIEW_GRID, span_m: PREVIEW_SPAN_M, min_m: Math.min(...values), max_m: Math.max(...values), valid: values.length }
+    const result = { point, center, heights, layers, grid: PREVIEW_GRID, span_m: PREVIEW_SPAN_M, min_m: Math.min(...values), max_m: Math.max(...values), valid: values.length }
     signal.throwIfAborted()
     if (cache.size >= 8) cache.delete(cache.keys().next().value!)
     cache.set(key, result)
