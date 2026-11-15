@@ -73,11 +73,11 @@
     }
   ],
   "class_fraction": {
-    "Low": 0.659196,
-    "Moderate": 0.243129,
-    "Elevated": 0.08132,
-    "High": 0.014462,
-    "Severe": 0.001893
+    "Low": 0.659153,
+    "Moderate": 0.243098,
+    "Elevated": 0.081354,
+    "High": 0.014499,
+    "Severe": 0.001896
   },
   "no_go_fraction": 0.00236,
   "disclaimer": "Prototype hazard index for route-planning demonstrations only. It is derived from orbital topography with heuristic weights and has not been validated against rover traversability data. It is not a mission-planning product.",
