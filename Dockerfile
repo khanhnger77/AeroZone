@@ -9,8 +9,9 @@
 # which works but takes a long time.
 FROM ghcr.io/prefix-dev/pixi:0.67.2-bookworm
 
-# Run as an ordinary user that owns every file it may need to write.
-RUN useradd -m -u 1000 user
+# Run as an ordinary user that owns every file it may need to write. The app folder is created
+# here: the classic builder (Cloud Build) would create WORKDIR owned by root.
+RUN useradd -m -u 1000 user && mkdir -p /home/user/app && chown user:user /home/user/app
 USER user
 ENV HOME=/home/user
 WORKDIR /home/user/app

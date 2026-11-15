@@ -115,8 +115,13 @@ def main(argv: list[str] | None = None) -> int:
     deploy = [exe, "run", "deploy", args.service, "--source", ".", "--region", args.region,
               "--allow-unauthenticated", "--port", "7860", "--memory", "2Gi", "--cpu", "1",
               "--min-instances", "0", "--max-instances", "1", "--timeout", "3600", "--cpu-boost", *common]
-    if env:   # "^|^" makes | the separator, so values may contain commas
-        deploy.append("--update-env-vars=^|^" + "|".join(f"{k}={v}" for k, v in env.items()))
+    if env:
+        # Plain KEY=VALUE,KEY=VALUE: on Windows gcloud is a .cmd batch file, so cmd.exe would read
+        # gcloud's custom-delimiter syntax (^|^) as an escape and a pipe.
+        bad = [k for k, v in env.items() if any(c in v for c in ',|&<>^%"')]
+        if bad:
+            sys.exit(f"{', '.join(bad)} contains a character gcloud/cmd.exe cannot pass safely; set it in the Cloud Run console")
+        deploy.append("--update-env-vars=" + ",".join(f"{k}={v}" for k, v in env.items()))
     run(deploy)
 
     url = run([exe, "run", "services", "describe", args.service, "--region", args.region,
