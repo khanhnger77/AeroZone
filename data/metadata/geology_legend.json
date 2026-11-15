@@ -137,92 +137,7 @@
       "color": "#9b2226"
     }
   ],
-  "terrain_classes": [
-    {
-      "code": 1,
-      "name": "Non-bedrock: smooth, featureless",
-      "risk_score": 15,
-      "color": "#00ff00"
-    },
-    {
-      "code": 2,
-      "name": "Bedrock: textured",
-      "risk_score": 25,
-      "color": "#ab0000"
-    },
-    {
-      "code": 3,
-      "name": "Small ripples: non-continuous, bedrock substrate",
-      "risk_score": 40,
-      "color": "#5b0000"
-    },
-    {
-      "code": 4,
-      "name": "Bedrock: smooth",
-      "risk_score": 10,
-      "color": "#fe0000"
-    },
-    {
-      "code": 5,
-      "name": "Small ripples: non-continuous, non-bedrock substrate",
-      "risk_score": 45,
-      "color": "#007dff"
-    },
-    {
-      "code": 6,
-      "name": "Small ripples: continuous",
-      "risk_score": 60,
-      "color": "#00fffe"
-    },
-    {
-      "code": 7,
-      "name": "Non-bedrock: textured",
-      "risk_score": 25,
-      "color": "#005a00"
-    },
-    {
-      "code": 8,
-      "name": "Non-bedrock: smooth, lineated",
-      "risk_score": 15,
-      "color": "#00aa00"
-    },
-    {
-      "code": 9,
-      "name": "Large ripples: simple form, isolated",
-      "risk_score": 60,
-      "color": "#ff9600"
-    },
-    {
-      "code": 10,
-      "name": "Bedrock: rugged",
-      "risk_score": 60,
-      "color": "#ffff00"
-    },
-    {
-      "code": 11,
-      "name": "Boulder fields",
-      "risk_score": 90,
-      "color": "#000000"
-    },
-    {
-      "code": 12,
-      "name": "Large ripples: simple form, continuous",
-      "risk_score": 80,
-      "color": "#0000fd"
-    },
-    {
-      "code": 13,
-      "name": "Bedrock: fractured",
-      "risk_score": 45,
-      "color": "#870059"
-    },
-    {
-      "code": 14,
-      "name": "Large ripples: rectilinear form",
-      "risk_score": 80,
-      "color": "#ccccff"
-    }
-  ],
+  "terrain_classes": [],
   "group_colors": {
     "bedrock_smooth": "#c9b79c",
     "regolith_fines": "#e9d8a6",
@@ -244,6 +159,5 @@
   "source": {
     "units": "Stack, K. M. et al. (2020) Photogeologic map of the Perseverance rover field site in Jezero crater constructed by the Mars 2020 Science Team. Space Sci. Rev. 216, 127. doi:10.1007/s11214-020-00739-x",
     "terrain_classes": "Wright, J. et al. (2022) NOAH-H terrain classifications of Jezero crater, Mars. The Open University, dataset. doi:10.21954/ou.rd.17121482.v1"
-  },
-  "terrain_source_res_m": 0.25
+  }
 }
