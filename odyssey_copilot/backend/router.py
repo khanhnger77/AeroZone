@@ -289,6 +289,7 @@ def dispatch_copilot_tool(func_name: str, func_args: Dict[str, Any], cur_lon: fl
 
 
 MAX_TOOL_ROUNDS = 3
+MAX_REPLY_TOKENS = 1024  # per completion; keeps the credit reservation small (see chat_openrouter)
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Raw tool-call markup some models (e.g. DeepSeek) emit as plain text instead of structured tool_calls
 LEAKED_TOOL_MARKUP = re.compile(r"<[｜|][^>]*[｜|]>")
@@ -351,7 +352,11 @@ async def chat_openrouter(request: ChatRequest, api_key: str, model: str, cur_lo
     async with httpx.AsyncClient(timeout=30.0) as client:
         for _ in range(MAX_TOOL_ROUNDS + 1):
             # Tools stay enabled on every round so the model can chain calls; the last round forces a text answer.
-            payload: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.2}
+            # max_tokens: without it OpenRouter reserves the model's whole output window (~114k tokens)
+            # against the key's credit limit and answers 402, which silently sent every chat to
+            # the offline fallback. Capcom replies are a few sentences.
+            payload: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.2,
+                                       "max_tokens": MAX_REPLY_TOKENS}
             if len(tools_called) < MAX_TOOL_ROUNDS:
                 payload["tools"] = OPENROUTER_TOOLS
                 payload["tool_choice"] = "auto"
