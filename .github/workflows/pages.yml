@@ -1,7 +1,7 @@
 # Static frontend on GitHub Pages: https://<owner>.github.io/<repo>/
-# The planner API, Copilot and 3D sim run on the Hugging Face Space named by the repository
+# The planner API, Copilot and 3D sim run on Google Cloud Run, at the address in the repository
 # variable BACKEND_URL (Settings > Secrets and variables > Actions > Variables), e.g.
-# https://<user>-<space>.hf.space. See docs/deployment.md.
+# https://aerozone-<hash>.us-central1.run.app. See docs/deployment.md.
 name: Deploy frontend to GitHub Pages
 
 on:

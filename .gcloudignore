@@ -1,0 +1,26 @@
+# Files NOT uploaded by `gcloud run deploy --source .` (pixi run deploy-cloudrun).
+# Without this file gcloud would use .gitignore and drop the terrain rasters the planner needs.
+# Keep in step with .dockerignore.
+
+# Rebuilt inside the image
+.pixi/
+**/node_modules/
+frontend/dist/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+sim/.tools/
+.git/
+
+# Never ship secrets: Cloud Run gets OPENROUTER_API_KEY as a service setting (deploy-cloudrun --set-key)
+api_key.credentials
+*.credentials
+
+# Large raw sources the app does not read at run time (the derived rasters are enough)
+data/raw/hirise_dtm/*.tif
+data/raw/**/*.part
+media/
+
+# Not needed to build the image
+.github/
+docs/

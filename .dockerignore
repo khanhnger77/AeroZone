@@ -8,7 +8,7 @@ frontend/dist/
 sim/.tools/
 .git/
 
-# Never ship secrets: the Space reads OPENROUTER_API_KEY from its own secret settings
+# Never ship secrets: Cloud Run gets OPENROUTER_API_KEY as a service setting (deploy-cloudrun --set-key)
 api_key.credentials
 *.credentials
 

@@ -38,7 +38,7 @@ WEB_DATA = FRONTEND / "public" / "data"
 TOOLS_DIR = ROOT / "sim" / ".tools"
 
 PORT_API, PORT_SIM, PORT_WEB = 8000, 8100, 4173
-HOST_WEB = "127.0.0.1"  # --host 0.0.0.0 in a container (Hugging Face Space), where :PORT_WEB is public
+HOST_WEB = "127.0.0.1"  # --host 0.0.0.0 in a container (Cloud Run), where :PORT_WEB is public
 CORE_SCRIPTS = ["download_data.py", "validate_data.py", "process_terrain.py",
                 "generate_hazard.py", "render_layers.py", "build_science_targets.py"]
 ENV_SCRIPTS = [("download_env_data.py", ["--skip-large"]), ("process_geology.py", []), ("generate_hazard.py", []),

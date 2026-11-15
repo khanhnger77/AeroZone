@@ -3,12 +3,12 @@
  *
  * Local runs (`pixi run demo`, Vite dev) serve everything from one origin, so the paths stay
  * relative. A static deployment (GitHub Pages) has no server of its own: it is built with
- * VITE_BACKEND_URL set to the hosted backend (the Hugging Face Space), which serves both
+ * VITE_BACKEND_URL set to the hosted backend (Google Cloud Run), which serves both
  * /api and /sim on a single origin.
  */
 const configured = (import.meta.env.VITE_BACKEND_URL ?? '').trim().replace(/\/+$/, '')
 
-/** Origin of the backend, e.g. "https://user-aerozone.hf.space"; '' when same-origin. */
+/** Origin of the backend, e.g. "https://aerozone-abc123-uc.a.run.app"; '' when same-origin. */
 export const BACKEND = configured
 
 /** Origin the sim iframe runs on: the backend's origin, or this page's own. */
