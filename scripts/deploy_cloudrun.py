@@ -23,6 +23,7 @@ Usage (needs the Google Cloud CLI, `gcloud auth login`, and a project with billi
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -36,10 +37,25 @@ INSTALL = "https://cloud.google.com/sdk/docs/install (Windows: winget install Go
 
 
 def gcloud() -> str:
+    """gcloud on PATH, else its default install folders: a terminal opened before the install
+    still has the old PATH, so the installer's PATH entry is not visible there yet."""
     exe = shutil.which("gcloud")
+    if not exe:
+        bases = [os.environ.get(v, "") for v in ("LOCALAPPDATA", "ProgramFiles(x86)", "ProgramFiles")]
+        found = [Path(b) / "Google" / "Cloud SDK" / "google-cloud-sdk" / "bin" / "gcloud.cmd" for b in bases if b]
+        found += [Path.home() / "google-cloud-sdk" / "bin" / "gcloud", Path("/usr/lib/google-cloud-sdk/bin/gcloud")]
+        exe = next((str(p) for p in found if p.is_file()), None)
     if not exe:
         sys.exit(f"gcloud not found. Install the Google Cloud CLI: {INSTALL}, then run `gcloud auth login`.")
     return exe
+
+
+def check_login(exe: str) -> None:
+    account = subprocess.run([exe, "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
+                             text=True, capture_output=True).stdout.strip()
+    if not account:
+        sys.exit(f'gcloud is not signed in. Run:\n  & "{exe}" auth login\nthen run this command again.')
+    print(f"gcloud: signed in as {account}", flush=True)
 
 
 def run(cmd: list[str], *, capture: bool = False) -> str:
@@ -79,8 +95,17 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(".gcloudignore missing: without it gcloud follows .gitignore and drops the terrain rasters")
 
     exe = gcloud()
+    check_login(exe)
     common = ["--project", args.project, "--quiet"]
     run([exe, "services", "enable", *APIS, *common])
+
+    # New projects no longer give the default compute service account any roles, and Cloud Build
+    # runs `--source` builds as that account: without Cloud Run Builder (read the uploaded source,
+    # write logs, push the image) the build fails with "storage.objects.get access denied".
+    # Granting an already-held role is a no-op.
+    number = run([exe, "projects", "describe", args.project, "--format", "value(projectNumber)"], capture=True)
+    run([exe, "projects", "add-iam-policy-binding", args.project, "--condition=None", "--format=none",
+         f"--member=serviceAccount:{number}-compute@developer.gserviceaccount.com", "--role=roles/run.builder", "--quiet"])
 
     env: dict[str, str] = {}
     if args.set_key:

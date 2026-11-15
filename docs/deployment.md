@@ -59,6 +59,9 @@ When nobody has used it for a while, the first visit starts a container, which t
 
    The script:
    - enables the Cloud Run, Cloud Build and Artifact Registry APIs;
+   - gives the project's default compute service account the **Cloud Run Builder** role. New
+     projects no longer grant it automatically, and without it the build fails with
+     "storage.objects.get access denied";
    - uploads the folder and builds the image in Cloud Build (about 5–10 minutes the first time);
    - deploys the service;
    - with `--set-key`, sets `OPENROUTER_API_KEY` from `api_key.credentials` as an environment
