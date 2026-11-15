@@ -28,7 +28,7 @@ next visit wakes it in about a minute, and the planner shows "offline" until the
 | CORS | `backend/main.py`, `sim/server/sim_server.py` | The planner API allows any origin. The sim allows the origins in `MO_CORS_ORIGINS` (`*` in the image; none when unset, so local runs are unchanged). |
 | Container | `Dockerfile`, `.dockerignore` | Pinned pixi environment, `npm ci`, production build, then `pixi run demo --host 0.0.0.0 --port 7860`. `vite preview` proxies `/api` and `/sim`. |
 | Backend upload | `scripts/deploy_space.py` (`pixi run deploy-space`) | Uploads tracked files plus the git-ignored rasters and writes the Space README header. It never uploads `api_key.credentials`. |
-| Automation | `.github/workflows/pages.yml`, `space.yml` | On every push to `main`, the first rebuilds Pages and the second syncs the code to the Space. |
+| Automation | `.github/workflows/pages.yml`, `space.yml` | On every push to `deploy/web`, the first rebuilds Pages and the second syncs the code to the Space. |
 
 ## One-time setup
 
@@ -60,9 +60,12 @@ The repository owner does this. Pages is free for public repositories.
    - Variable `BACKEND_URL` = `https://<user>-aerozone.hf.space`
    - Variable `HF_SPACE` = `<user>/aerozone`, and secret `HF_TOKEN` = the write token.
      These two are optional; they keep the Space in sync automatically.
-3. Push to `main`, or run **Actions → Deploy frontend to GitHub Pages → Run workflow**. The link
-   is `https://<owner>.github.io/<repo>/`.
-4. Optional: narrow the sim's CORS to the Pages origin:
+3. **Settings → Environments → github-pages → Deployment branches and tags → Add rule:**
+   `deploy/web`. By default Pages only accepts deployments from the default branch (`main`),
+   and `main` is kept for local runs, so it never deploys.
+4. Push to `deploy/web`, or run **Actions → Deploy frontend to GitHub Pages → Run workflow** with
+   `deploy/web` selected. The link is `https://<owner>.github.io/<repo>/`.
+5. Optional: narrow the sim's CORS to the Pages origin:
 
    ```bash
    pixi run deploy-space --space <user>/aerozone --code-only --cors-origin https://<owner>.github.io
@@ -70,7 +73,7 @@ The repository owner does this. Pages is free for public repositories.
 
 ## Updating
 
-* **Code:** push to `main`. Both workflows run, and the Space rebuilds in a few minutes.
+* **Code:** merge the tested work into `deploy/web` and push. Both workflows run, and the Space rebuilds in a few minutes.
 * **Data** (rasters changed after `pixi run data`): run
   `pixi run deploy-space --space <user>/aerozone`. CI cannot do this because the rasters are not in git.
 * **Copilot key:** run `pixi run deploy-space --space <user>/aerozone --code-only --set-key`, or edit

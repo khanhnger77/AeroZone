@@ -53,7 +53,8 @@ Stop the local demo before running `share`, since both use the same ports.
 
 For a link that does not depend on a running laptop, the frontend is published to **GitHub Pages**.
 The planner API, Copilot and 3D sim run in a free **Hugging Face Docker Space**
-(`Dockerfile`, `pixi run deploy-space`). Both update automatically on every push to `main`.
+(`Dockerfile`, `pixi run deploy-space`). Both update automatically on every push to the
+`deploy/web` branch; `main` stays the local-run branch and never deploys.
 Setup and updating: [deployment guide](docs/deployment.md).
 
 ## Modules

@@ -1,4 +1,4 @@
-# Keeps the Hugging Face Space (backend) on the latest main. Code only: the terrain rasters are
+# Keeps the Hugging Face Space (backend) on the latest deploy/web. Code only: the terrain rasters are
 # git-ignored, so the first upload, and any data change, runs locally with `pixi run deploy-space`.
 # Needs the repository variable HF_SPACE (<user>/<space>) and the secret HF_TOKEN (write access).
 # See docs/deployment.md.
@@ -6,7 +6,7 @@ name: Deploy backend to Hugging Face
 
 on:
   push:
-    branches: [main]
+    branches: [deploy/web]
   workflow_dispatch:
 
 concurrency:
