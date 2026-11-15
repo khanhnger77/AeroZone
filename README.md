@@ -1,5 +1,8 @@
 # AeroZone · Mars Odyssey
 
+**Live demo:** <https://khanhnger77.github.io/AeroZone/>  
+**User manual:** [docs/User_Manual.md](docs/User_Manual.md)
+
 A terrain exploration and route planning application for **Jezero Crater, Mars**.
 The repository combines NASA/USGS data, an interactive map, a route planning API,
 3D simulation, obstacle avoidance, and the Odyssey Copilot assistant.

@@ -1,1 +1,1 @@
-Use this link to demo: https://garmin-riding-publishers-ambassador.trycloudflare.com/
+Use this link to demo: https://khanhnger77.github.io/AeroZone/
