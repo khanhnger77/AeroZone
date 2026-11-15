@@ -44,12 +44,17 @@ pip install fastapi uvicorn pydantic httpx
 ```
 
 ### 2. Cấu hình OpenRouter API Key
-Tạo file `.env` tại thư mục gốc của project (`Challenge/AeroZone/.env`):
+File `.env` (đã có sẵn trong repo) không chứa key, chỉ trỏ tới file key:
 ```env
-OPENROUTER_API_KEY="sk-or-v1-..."
+OPENROUTER_API_KEY=file:api_key.credentials
 OPENROUTER_MODEL="meta-llama/llama-3.3-70b-instruct"  # tùy chọn
 ```
-*(Hoặc `export OPENROUTER_API_KEY="sk-or-v1-..."` trong terminal. Không có key thì copilot dùng offline fallback.)*
+Tạo file `api_key.credentials` ở thư mục gốc của project (cạnh `.env`), chỉ chứa key:
+```text
+sk-or-v1-...
+```
+File này nằm trong `.gitignore`: **không commit**, và không dán key vào `.env`.
+*(Hoặc `export OPENROUTER_API_KEY="sk-or-v1-..."` trong terminal, biến môi trường được ưu tiên. Không có key thì copilot dùng offline fallback.)*
 
 ---
 

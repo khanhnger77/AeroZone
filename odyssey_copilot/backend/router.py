@@ -31,19 +31,48 @@ DEFAULT_OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-
 router = APIRouter(tags=["copilot"])
 copilot_router = router
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SECRET_FILE_PREFIX = "file:"
+
+
+def _resolve_secret(value: Optional[str], base: Path) -> Optional[str]:
+    """Return the key itself, or read it from a file when the value is ``file:<path>``.
+
+    The tracked ``.env`` holds ``OPENROUTER_API_KEY=file:api_key.credentials`` and the key lives in
+    that untracked file (path relative to ``base``, the folder of the ``.env``). The file holds the
+    key on its first non-comment line, either bare or as ``OPENROUTER_API_KEY=...``. A missing or
+    empty file gives None, so the copilot falls back to its offline answers.
+    """
+    if not value or not value.startswith(SECRET_FILE_PREFIX):
+        return value or None
+    path = Path(value[len(SECRET_FILE_PREFIX):].strip())
+    path = path if path.is_absolute() else base / path
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        clean = line.strip()
+        if not clean or clean.startswith("#"):
+            continue
+        if "=" in clean:
+            clean = clean.split("=", 1)[1].strip()
+        return clean.strip('"').strip("'") or None
+    return None
+
+
 def get_openrouter_credentials() -> tuple[Optional[str], str]:
     """Return (api_key, model) for OpenRouter if configured."""
-    key = os.environ.get("OPENROUTER_API_KEY")
+    key = _resolve_secret(os.environ.get("OPENROUTER_API_KEY"), REPO_ROOT)
     model = os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
 
     # Check .env files if not found in environment
     if not key:
-        for p in [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]:
+        for p in [Path(".env"), REPO_ROOT / ".env"]:
             if p.exists():
                 for line in p.read_text(encoding="utf-8").splitlines():
                     clean = line.strip()
                     if clean.startswith("OPENROUTER_API_KEY="):
                         val = clean.split("=", 1)[1].strip().strip('"').strip("'")
+                        val = _resolve_secret(val, p.resolve().parent)
                         if val:
                             key = val
                     elif clean.startswith("OPENROUTER_MODEL="):

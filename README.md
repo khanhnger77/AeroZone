@@ -126,16 +126,35 @@ pixi run npm --prefix frontend test
 
 ## Odyssey Copilot
 
-Copilot is integrated into the web app and Planner API. Configure OpenRouter using
-environment variables or a `.env` file in the repository root:
+Copilot is integrated into the web app and Planner API and calls an AI model through
+[OpenRouter](https://openrouter.ai). The tracked `.env` in the repository root selects the
+model and points to the key, which is kept out of git:
 
 ```dotenv
-OPENROUTER_API_KEY=your_api_key
+OPENROUTER_API_KEY=file:api_key.credentials
 OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
 ```
 
-The backend includes fallback responses when no key is available or the AI service
-cannot be reached. See the [Copilot guide](odyssey_copilot/README.md),
+**Add your API key** (once per machine):
+
+1. Get an OpenRouter key at <https://openrouter.ai/keys> (it starts with `sk-or-v1-`), or ask
+   the team for the shared one.
+2. Create a file named `api_key.credentials` in the repository root, next to `.env`, holding
+   only the key:
+
+   ```text
+   sk-or-v1-...
+   ```
+
+   Lines starting with `#` are ignored, and `OPENROUTER_API_KEY=sk-or-v1-...` also works.
+3. Restart the backend (`pixi run backend` or `pixi run demo`).
+
+`api_key.credentials` is listed in `.gitignore`: never commit it, and never paste the key
+into `.env`. Setting the `OPENROUTER_API_KEY` environment variable still works and takes
+precedence.
+
+The backend includes fallback responses when no key is available (no or empty
+`api_key.credentials`) or the AI service cannot be reached. See the [Copilot guide](odyssey_copilot/README.md),
 [sim engine guide](sim/README.md), and [obstacle avoidance guide](sim/obstacle_avoid/README.md)
 for further details.
 

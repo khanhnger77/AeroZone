@@ -499,3 +499,23 @@ class TestSavedLocations(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestApiKeyFile(unittest.TestCase):
+    """The tracked .env points at an untracked key file: OPENROUTER_API_KEY=file:api_key.credentials."""
+
+    def test_key_read_from_credentials_file(self):
+        import tempfile
+        from odyssey_copilot.backend.router import _resolve_secret
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            (base / "api_key.credentials").write_text("# comment\n\nsk-or-v1-test123\n", encoding="utf-8")
+            self.assertEqual(_resolve_secret("file:api_key.credentials", base), "sk-or-v1-test123")
+            (base / "kv.credentials").write_text('OPENROUTER_API_KEY="sk-or-v1-abc"\n', encoding="utf-8")
+            self.assertEqual(_resolve_secret("file:kv.credentials", base), "sk-or-v1-abc")
+            # Missing or empty file: no key, so the copilot uses its offline fallback.
+            self.assertIsNone(_resolve_secret("file:missing.credentials", base))
+            (base / "empty.credentials").write_text("# only a comment\n", encoding="utf-8")
+            self.assertIsNone(_resolve_secret("file:empty.credentials", base))
+            # A plain key still works as before.
+            self.assertEqual(_resolve_secret("sk-or-v1-plain", base), "sk-or-v1-plain")
