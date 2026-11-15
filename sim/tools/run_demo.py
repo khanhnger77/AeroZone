@@ -379,25 +379,28 @@ def stop_all(children: list["Child"], grace_s: float = STOP_GRACE_S) -> None:
         warn(f"force-killed after {grace_s:.0f} s: {', '.join(forced)}")
 
 
-def start_servers() -> list[Child]:
+def start_backends() -> list[Child]:
     py = sys.executable
+    return [
+        Child("api", "blue", [py, "-m", "uvicorn", "backend.main:app", "--port", str(PORT_API), "--log-level", "warning"], ROOT),
+        Child("sim", "magenta", [py, "-m", "sim.server.sim_server", "--port", str(PORT_SIM)], ROOT),
+    ]
+
+
+def start_web() -> Child:
     # Run Vite through node directly: on Windows `npx` is a .cmd batch file, and stopping it makes
     # cmd.exe ask "Terminate batch job (Y/N)?", which blocks a clean shutdown.
     vite_js = FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"
     web_cmd = ([which("node"), str(vite_js)] if vite_js.exists() else [which("npx"), "vite"]) + \
         ["preview", "--host", HOST_WEB, "--port", str(PORT_WEB), "--strictPort"]
-    return [
-        Child("api", "blue", [py, "-m", "uvicorn", "backend.main:app", "--port", str(PORT_API), "--log-level", "warning"], ROOT),
-        Child("sim", "magenta", [py, "-m", "sim.server.sim_server", "--port", str(PORT_SIM)], ROOT),
-        Child("web", "green", web_cmd, FRONTEND),
-    ]
+    return Child("web", "green", web_cmd, FRONTEND)
 
 
-def wait_healthy(children: list[Child]) -> None:
+def wait_healthy(children: list[Child], names: tuple[str, ...]) -> None:
     checks = {"planner API": f"http://127.0.0.1:{PORT_API}/api/health",
               "sim server": f"http://127.0.0.1:{PORT_SIM}/sim/config",
               "web app": f"http://127.0.0.1:{PORT_WEB}/"}
-    pending = dict(checks)
+    pending = {n: checks[n] for n in names}
     t0 = time.monotonic()
     while pending:
         for c in children:
@@ -500,6 +503,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--host", default=HOST_WEB,
                     help="address the web app listens on (0.0.0.0 inside a container); API and sim stay local")
     ap.add_argument("--port", type=int, default=PORT_WEB, help="port of the web app, which also proxies /api and /sim")
+    ap.add_argument("--no-build", action="store_true",
+                    help="use the existing frontend/dist as is (a container image built it already)")
     args = ap.parse_args(argv)
     HOST_WEB, PORT_WEB = args.host, args.port
 
@@ -511,7 +516,11 @@ def main(argv: list[str] | None = None) -> int:
 
     step_data(env_data=not args.no_env_data)
     step_assets()
-    step_web()
+    if args.no_build:
+        if not (FRONTEND / "dist" / "index.html").is_file():
+            die("--no-build: frontend/dist/index.html missing")
+    else:
+        step_web()
 
     children: list[Child] = []
     stopping = threading.Event()
@@ -528,8 +537,13 @@ def main(argv: list[str] | None = None) -> int:
     rc = 0
     try:
         say("starting servers")
-        children = start_servers()
-        wait_healthy(children)
+        # The web app (the only public port) starts last, once the API and sim answer: a host such
+        # as Cloud Run treats an open port as "started" and may then throttle the CPU, which would
+        # stall servers still loading behind it.
+        children = start_backends()
+        wait_healthy(children, ("planner API", "sim server"))
+        children.append(start_web())
+        wait_healthy(children, ("web app",))
         public = None
         if args.share:
             tun, public = start_tunnel()

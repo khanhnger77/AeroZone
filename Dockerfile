@@ -35,4 +35,4 @@ ENV MO_CORS_ORIGINS="*" \
     PORT=7860
 EXPOSE 7860
 # Cloud Run sets PORT; the web app listens there and proxies /api (:8000) and /sim (:8100).
-CMD ["sh", "-c", "exec pixi run --locked demo --no-browser --no-env-data --host 0.0.0.0 --port \"$PORT\""]
+CMD ["sh", "-c", "exec pixi run --locked demo --no-browser --no-env-data --no-build --host 0.0.0.0 --port \"$PORT\""]
